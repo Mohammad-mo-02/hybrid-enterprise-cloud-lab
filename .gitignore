@@ -1,0 +1,64 @@
+# Credentials & Secrets
+*.key
+*.pem
+*.pfx
+*.p12
+credentials.json
+secrets.json
+.env
+.env.local
+.vault
+
+# Cloud Provider Files
+aws_credentials
+~/.aws/
+~/.azure/
+terraform.tfvars
+terraform.tfstate*
+*.tfstate*
+.terraform/
+
+# VM & Hypervisor
+*.vmdk
+*.vmx
+*.log
+vmware.log
+
+# Microsoft 365 & Azure
+*.msgraph
+*oauth*
+*mfa*
+temp_tokens/
+
+# API Keys & Tokens
+api_key*
+token*
+access_token*
+refresh_token*
+
+# OS & IDE
+.DS_Store
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+__pycache__/
+*.pyc
+node_modules/
+
+# Sensitive Documentation
+*_credentials.md
+*_passwords.md
+*_sensitive.md
+
+# Lab Media (ISOs, large files)
+ISO_Images/
+*.iso
+*.vhd
+*.qcow2
+
+# Terraform Locks
+.terraform.lock.hcl
+
+# GitHub Actions
+.github/workflows/secrets*
