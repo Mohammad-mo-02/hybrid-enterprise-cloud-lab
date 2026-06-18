@@ -396,9 +396,6 @@ Phase 2.2B validates that automation worked correctly by:
 ## References & Resources
 
 - [Microsoft AD DS PowerShell Module Documentation](https://docs.microsoft.com/en-us/powershell/module/activedirectory/)
-- [Active Directory Schema Extensions](https://docs.microsoft.com/en-us/windows/win32/adschema/attribute-syntaxes)
-- [Distinguished Names in Active Directory](https://docs.microsoft.com/en-us/windows/win32/ad/distinguished-names)
-- [PowerShell Error Handling Best Practices](https://docs.microsoft.com/en-us/powershell/scripting/learn/deep-dives/everything-about-try-catch-finally)
 
 ---
 
