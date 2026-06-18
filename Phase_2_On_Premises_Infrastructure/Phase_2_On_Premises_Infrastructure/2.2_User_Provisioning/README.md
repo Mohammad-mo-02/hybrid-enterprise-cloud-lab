@@ -399,3 +399,37 @@ Phase 2.2B validates that automation worked correctly by:
 
 ---
 
+### 2.2B: Practical Demonstration Module (Operational Verification)
+
+**Objective:**
+Following automated provisioning, this task served as the operational verification layer to ensure a healthy, correctly configured Active Directory environment.
+
+**Verification Methodology:**
+
+* **Structural Audit:** Conducted a review of the Organizational Unit (OU) hierarchy in Active Directory Users and Computers (ADUC) to ensure proper nesting of `Administration`, `Departments`, `Groups`, and `Devices` containers.
+* **RBAC Implementation:** Provisioned role-based security groups (e.g., `SG-Finance-Staff`, `SG-IT-Admins`) to establish a framework for delegated administration and access control.
+* **Asset Standardization:** Registered enterprise computer objects (e.g., `WKS-Finance-001`) within the `Devices` OU to enforce standardized naming conventions.
+
+**Operational Evidence:**
+
+| Artifact | Description |
+| --- | --- |
+| **OU Hierarchy** | Audit of the AD Main Page and nested organizational structure. |
+| **Security Groups** | Validation of departmental group composition. |
+| **Device Objects** | Verification of enterprise-compliant device naming. |
+
+**Evidence Screenshots:**
+
+
+*(Fig: AD Main Page - OU Hierarchy)*
+
+
+*(Fig: AD Groups Page)*
+
+
+*(Fig: AD Devices Page)*
+
+**Automation Script:**
+
+* `Provision-Infrastructure-Objects.ps1`: Script utilized to populate the security and device containers for this verification phase.
+
