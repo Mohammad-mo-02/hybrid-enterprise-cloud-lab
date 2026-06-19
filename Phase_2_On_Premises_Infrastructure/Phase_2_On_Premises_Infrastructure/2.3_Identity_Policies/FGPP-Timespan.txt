@@ -1,0 +1,144 @@
+# ==============================================================================
+# Script Name: Create-FGPP-Policies.ps1  (v2 - TimeSpan fix)
+# Description: Creates three tiered Fine-Grained Password Policies (PSOs) and
+#              applies them to the Tier 0/1/2 security groups.
+# Phase:       2.3A - Fine-Grained Password Policies
+# Author:      Mohammad
+# Date:        June 19, 2026
+# Fix:         Replaced manual TimeSpan strings with New-TimeSpan to correctly
+#              handle 60-minute values (60 min = 1 hour, invalid as "00:60:00").
+# Notes:       Idempotent - safe to re-run.
+# ==============================================================================
+
+$domainDN = "DC=corp,DC=infralab,DC=local"
+
+Start-Transcript -Path "C:\Logs\Create-FGPP-Policies-$(Get-Date -Format 'yyyyMMdd-HHmmss').txt" -Force
+
+Write-Host "=== PHASE 2.3A: FINE-GRAINED PASSWORD POLICY CREATION (v2) ===" -ForegroundColor Cyan
+
+# Settings table. Time values stay as plain numbers (days / minutes);
+# New-TimeSpan converts them safely below.
+$policies = @(
+    @{
+        Name                = "PSO-Tier0-Admins"
+        Precedence          = 10
+        MinLength           = 16
+        Complexity          = $true
+        History             = 12
+        MaxAgeDays          = 30
+        MinAgeDays          = 1
+        LockoutThreshold    = 3
+        LockoutDurationMin  = 60
+        LockoutWindowMin    = 60
+        AppliesToGroup      = "SG-Tier0-Admins"
+        Description         = "Tier 0 Forest Admins - strictest policy (16 char, 3 attempt lockout)"
+    },
+    @{
+        Name                = "PSO-Tier1-Admins"
+        Precedence          = 20
+        MinLength           = 14
+        Complexity          = $true
+        History             = 8
+        MaxAgeDays          = 45
+        MinAgeDays          = 1
+        LockoutThreshold    = 5
+        LockoutDurationMin  = 30
+        LockoutWindowMin    = 30
+        AppliesToGroup      = "SG-Tier1-Admins"
+        Description         = "Tier 1 Department Admins - moderate policy (14 char, 5 attempt lockout)"
+    },
+    @{
+        Name                = "PSO-Tier2-Users"
+        Precedence          = 30
+        MinLength           = 12
+        Complexity          = $true
+        History             = 5
+        MaxAgeDays          = 60
+        MinAgeDays          = 1
+        LockoutThreshold    = 5
+        LockoutDurationMin  = 30
+        LockoutWindowMin    = 30
+        AppliesToGroup      = "SG-Tier2-Users"
+        Description         = "Tier 2 Standard Users - baseline policy (12 char, 5 attempt lockout)"
+    }
+)
+
+foreach ($p in $policies) {
+
+    Write-Host "`n--- Processing $($p.Name) ---" -ForegroundColor Cyan
+
+    # Build TimeSpans the SAFE way. New-TimeSpan handles 60 minutes correctly
+    # (it knows 60 minutes = 1 hour), unlike a hand-typed "00:60:00" string.
+    $maxAge        = New-TimeSpan -Days $p.MaxAgeDays
+    $minAge        = New-TimeSpan -Days $p.MinAgeDays
+    $lockoutDur    = New-TimeSpan -Minutes $p.LockoutDurationMin
+    $lockoutWindow = New-TimeSpan -Minutes $p.LockoutWindowMin
+
+    # STEP 1: Create or update the PSO
+    try {
+        $existing = Get-ADFineGrainedPasswordPolicy -Filter "Name -eq '$($p.Name)'" -ErrorAction SilentlyContinue
+
+        if (-not $existing) {
+            New-ADFineGrainedPasswordPolicy `
+                -Name $p.Name `
+                -Precedence $p.Precedence `
+                -MinPasswordLength $p.MinLength `
+                -ComplexityEnabled $p.Complexity `
+                -PasswordHistoryCount $p.History `
+                -MaxPasswordAge $maxAge `
+                -MinPasswordAge $minAge `
+                -LockoutThreshold $p.LockoutThreshold `
+                -LockoutDuration $lockoutDur `
+                -LockoutObservationWindow $lockoutWindow `
+                -ReversibleEncryptionEnabled $false `
+                -Description $p.Description `
+                -ErrorAction Stop
+
+            Write-Host "[+] Created PSO: $($p.Name)" -ForegroundColor Green
+        }
+        else {
+            Set-ADFineGrainedPasswordPolicy `
+                -Identity $p.Name `
+                -Precedence $p.Precedence `
+                -MinPasswordLength $p.MinLength `
+                -ComplexityEnabled $p.Complexity `
+                -PasswordHistoryCount $p.History `
+                -MaxPasswordAge $maxAge `
+                -MinPasswordAge $minAge `
+                -LockoutThreshold $p.LockoutThreshold `
+                -LockoutDuration $lockoutDur `
+                -LockoutObservationWindow $lockoutWindow `
+                -ReversibleEncryptionEnabled $false `
+                -Description $p.Description `
+                -ErrorAction Stop
+
+            Write-Host "[!] PSO already existed - updated settings: $($p.Name)" -ForegroundColor Yellow
+        }
+    }
+    catch {
+        Write-Host "[-] ERROR creating/updating $($p.Name): $($_.Exception.Message)" -ForegroundColor Red
+        continue
+    }
+
+    # STEP 2: Bind the PSO to its security group
+    try {
+        $group = Get-ADGroup -Filter "Name -eq '$($p.AppliesToGroup)'" -ErrorAction Stop
+        $currentSubjects = (Get-ADFineGrainedPasswordPolicy -Identity $p.Name).AppliesTo
+
+        if ($currentSubjects -notcontains $group.DistinguishedName) {
+            Add-ADFineGrainedPasswordPolicySubject -Identity $p.Name -Subjects $group -ErrorAction Stop
+            Write-Host "[+] Applied $($p.Name) to group $($p.AppliesToGroup)" -ForegroundColor Green
+        }
+        else {
+            Write-Host "[!] $($p.Name) already applied to $($p.AppliesToGroup)" -ForegroundColor Yellow
+        }
+    }
+    catch {
+        Write-Host "[-] ERROR applying $($p.Name) to $($p.AppliesToGroup): $($_.Exception.Message)" -ForegroundColor Red
+    }
+}
+
+Write-Host "`n=== FGPP CREATION COMPLETE ===" -ForegroundColor Green
+Write-Host "Run the verification script next to confirm policies and targets." -ForegroundColor Cyan
+
+Stop-Transcript
