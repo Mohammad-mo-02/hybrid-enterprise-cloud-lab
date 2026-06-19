@@ -45,6 +45,7 @@ Lockout 3, Duration 1hr), confirming correct end-to-end application.
 The creation script is safe to re-run: existing PSOs are updated via
 Set-ADFineGrainedPasswordPolicy rather than recreated, and group bindings are
 checked before being added.
+
 # Phase 2.3B: Service Desk Simulator — Help Desk Runbook
 
 **Purpose:** A practical first-line support runbook documenting the resolution of ten
@@ -89,12 +90,13 @@ threshold, and a populated `AccountLockoutTime`.
 
 **Evidence — locked state (badPwdCount 5, LockedOut True):**
 
-![Locked account state](screenshots/Before_phase_scenario_1.png)
+![Locked account state](Before%20phase%20scenario%201.png)
 
 > *Test condition note:* For demonstration, the lockout was deliberately manufactured
 > by attempting authentication with a wrong password six times (Tier 2 policy locks at
 > five). This also serves as live proof that the Phase 2.3A FGPP lockout policy is
-> actively enforced.
+> actively enforced. The reproduction script is included as
+> `Scenario 1 AD lockout Script.txt`.
 
 ### Resolution — Method A: ADUC (GUI)
 1. Open **Active Directory Users and Computers**.
@@ -107,7 +109,7 @@ threshold, and a populated `AccountLockoutTime`.
 
 **Evidence — ADUC Find dialog and Account tab with Unlock ticked:**
 
-![ADUC unlock](screenshots/AD_Account_Unlock_Scenario_1.png)
+![ADUC unlock](AD%20Account%20Unlock%20Scenario%201.png)
 
 ### Resolution — Method B: PowerShell (CLI)
 Single account:
@@ -129,7 +131,7 @@ clears. The user can immediately log in again using their existing password.
 
 **Evidence — verified unlocked state (LockedOut False, badPwdCount 0, timestamp cleared):**
 
-![Verified unlocked](screenshots/Scenario_1_powershell_check_.png)
+![Verified unlocked](Scenario%201%20powershell%20check%20.png)
 
 ### Common Mistakes
 - **Resetting the password when only an unlock was needed** — forces an unnecessary
@@ -151,8 +153,9 @@ clears. The user can immediately log in again using their existing password.
 ### Evidence Captured
 | Evidence | File |
 |---|---|
-| Locked state (before) | `screenshots/Before_phase_scenario_1.png` |
-| ADUC unlock (Account tab) | `screenshots/AD_Account_Unlock_Scenario_1.png` |
-| Verified unlocked (after) | `screenshots/Scenario_1_powershell_check_.png` |
+| Locked state (before) | `Before phase scenario 1.png` |
+| ADUC unlock (Account tab) | `AD Account Unlock Scenario 1.png` |
+| Verified unlocked (after) | `Scenario 1 powershell check .png` |
+| Reproduction script | `Scenario 1 AD lockout Script.txt` |
 
 ---
