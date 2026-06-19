@@ -433,3 +433,42 @@ Following automated provisioning, this task served as the operational verificati
 
 * `Provision-Infrastructure-Objects.ps1`: Script utilized to populate the security and device containers for this verification phase.
 
+* ---
+
+## Corrections & Refinements (June 19, 2026)
+
+During preparation for Phase 2.3A (Fine-Grained Password Policies), an architectural review identified that the initial provisioning placed all 257 users directly in the Administration OU rather than distributing them across departmental OUs and establishing a tiered administrative model. This is a prerequisite for FGPP application, which targets users by tier.
+
+The following corrective actions were taken and are documented in the `2.2_Corrective_Scripts/` folder:
+
+### 1. User OU Placement Correction (`Fix-UserOUPlacement.ps1`)
+- **Issue:** All 257 users were located directly in the Administration OU.
+- **Fix:** Moved each user to their correct departmental OU (Finance, HR, IT, Sales, Operations, Marketing, Legal, etc.) based on their `Department` attribute.
+- **Result:** 257 users successfully distributed across 12 departmental OUs, 0 errors.
+- **Verification:** Confirmed 0 users remaining directly in Administration OU; users correctly distributed (Finance: 37, HR: 36, IT: 37, Sales: 37, Operations: 36, Marketing: 36, Legal: 36, etc.).
+
+### 2. Tiered Administrative Structure (`Create-TierStructure.ps1`)
+- **Issue:** No tiered administrative model existed (no separation of Tier 0/1/2 privilege levels).
+- **Fix:** 
+  - Created dedicated Tier 0 OU and 3 forest admin accounts (ForestAdmin-1, ServiceAdmin-1, BackupAdmin-1)
+  - Created tier-based security groups: `SG-Tier0-Admins`, `SG-Tier1-Admins`, `SG-Tier2-Users`
+  - Identified department managers (by Title attribute) and assigned to Tier 1
+  - Assigned all standard users to Tier 2
+- **Result:**
+  - Tier 0 (Forest Admins): 3 members
+  - Tier 1 (Department Managers): 7 members
+  - Tier 2 (Standard Users): 250 members
+- **Purpose:** This tiered structure is the foundation for Phase 2.3A FGPP, where each tier receives different password complexity and lockout policies.
+
+### Engineering Note
+The corrective scripts in this folder were refined post-execution to include production-grade error handling, pre-flight OU verification, and comprehensive logging. They produce the same verified end-state as the original execution while demonstrating iterative improvement and idempotency (safe to re-run).
+
+### Verified Final State
+| Tier | Group | Members | Privilege Level |
+|------|-------|---------|-----------------|
+| Tier 0 | SG-Tier0-Admins | 3 | Forest Admins (highest) |
+| Tier 1 | SG-Tier1-Admins | 7 | Department Managers (elevated) |
+| Tier 2 | SG-Tier2-Users | 250 | Standard Users |
+
+This structure satisfies all prerequisites for Phase 2.3A (Fine-Grained Password Policies).
+
