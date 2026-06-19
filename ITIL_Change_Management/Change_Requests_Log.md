@@ -13,6 +13,7 @@
 | CR ID | Date | Title | Type | Risk | Status |
 |-------|------|-------|------|------|--------|
 | CR-2026-0619-001 | 2026-06-19 | Phase 2.2 Corrective Action — User OU Distribution & Tiered Admin Structure | Normal (Corrective) | Medium | Implemented & Verified |
+| CR-2026-0619-002 | 2026-06-19 | Phase 2.3A — Fine-Grained Password Policy Implementation | Normal | Low | Implemented & Verified |
 
 ---
 
@@ -79,3 +80,43 @@ Remediation of two architectural gaps identified during Phase 2.3A pre-flight re
 - **Closure:** Approved — prerequisites for Phase 2.3A now satisfied.
 
 ---
+## CR-2026-0619-002
+
+**Title:** Phase 2.3A — Fine-Grained Password Policy Implementation
+**Date Raised:** June 19, 2026
+**Raised By:** Mohammad (Infrastructure Engineer)
+**Change Type:** Normal
+**Priority:** Medium
+**Status:** Implemented & Verified
+
+### Change Summary
+Created and applied three tiered Password Settings Objects (PSOs) targeting the tier security groups, enforcing role-appropriate password length, complexity, history, age, and lockout rules.
+
+### Risk Level
+**LOW** — Lab environment, additive change (no existing PSOs overwritten), idempotent script with full transcript logging.
+
+### Impact Analysis
+- **Systems Affected:** WS2022-DC01
+- **Objects Created:** 3 PSOs (PSO-Tier0-Admins, PSO-Tier1-Admins, PSO-Tier2-Users)
+- **Targets:** SG-Tier0-Admins, SG-Tier1-Admins, SG-Tier2-Users
+- **Downtime:** None
+- **Note:** New password rules apply at each user's next password change.
+
+### Implementation Steps
+1. Ran Create-FGPP-Policies.ps1 (v2, New-TimeSpan fix)
+2. Verified settings via Get-ADFineGrainedPasswordPolicy
+3. Verified targets via AppliesTo
+4. Verified per-user resolution via Get-ADUserResultantPasswordPolicy
+
+### Verification Evidence
+- ForestAdmin-1 resolves to PSO-Tier0-Admins (Precedence 10, MinLength 16, Lockout 3, Duration 1hr)
+- Transcript: C:\Logs\Create-FGPP-Policies-20260619-*.txt
+
+### Rollback Plan
+Remove-ADFineGrainedPasswordPolicy for each of the three PSOs. Users revert to the default domain password policy. No user objects affected.
+
+### Post-Implementation Review
+- **Issue encountered:** First run failed on Tier 0 — 60-minute lockout values were hand-built as "00:60:00", invalid for a TimeSpan (minutes max 59).
+- **Resolution:** Switched to New-TimeSpan, which correctly converts 60 min = 1 hr.
+- **Lesson:** Build time values with native cmdlets, not string concatenation.
+- **Closure:** Approved — prerequisites for Phase 2.3B satisfied.
