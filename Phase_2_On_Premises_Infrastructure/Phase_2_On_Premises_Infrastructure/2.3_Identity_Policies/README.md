@@ -159,3 +159,91 @@ clears. The user can immediately log in again using their existing password.
 | Reproduction script | `Scenario 1 AD lockout Script.txt` |
 
 ---
+## Scenario 2: Resetting a User's Password
+
+**Ticket Example:** *"I've forgotten my password and I can't get in."*
+
+### Background
+The most common help desk request. Unlike a lockout (Scenario 1), the user genuinely
+cannot authenticate because they do not know their credential. The fix is to set a new
+**temporary** password and force the user to change it at next logon.
+
+**Critical security principle — force change at next logon:** When an administrator
+resets a password, the admin now knows that password. A user's credential should be
+known only to them. Therefore every human-account reset must set
+**"User must change password at next logon"**, so the user logs in once with the temp
+password and AD immediately forces them to set a new private one. Skipping this leaves
+the admin in possession of a working user credential — a security failure.
+
+### Diagnosis
+Confirm the account and check whether it is already in a forced-change state:
+
+```powershell
+Get-ADUser -Identity "sarah.johnson" -Properties PasswordLastSet, PasswordExpired, pwdLastSet |
+    Select-Object Name, PasswordLastSet, PasswordExpired, pwdLastSet | Format-List
+```
+
+A `pwdLastSet` of `0` (shown as a blank `PasswordLastSet`) with `PasswordExpired: True`
+indicates the account is flagged to change its password at next logon — the normal
+state for a newly provisioned or freshly reset account.
+
+### Resolution — Method A: ADUC (GUI)
+1. Open **Active Directory Users and Computers**.
+2. Locate the user — right-click domain root → **Find** → `sarah.johnson` → **Find Now**.
+3. **Right-click the user** → **Reset Password** (a dedicated dialog, not Properties).
+4. Enter a temporary password meeting the user's policy (Tier 2: min 12 chars,
+   complexity), e.g. `TempPass2026!`.
+5. Ensure **"User must change password at next logon"** is ticked.
+6. (Optional) Tick **"Unlock the user's account"** to clear any existing lock.
+7. Click **OK** — confirm the success dialog.
+
+![ADUC password reset dialog](Scenario%202%20AD%20Password%20Reset.png)
+
+### Resolution — Method B: PowerShell (CLI)
+```powershell
+# Set a new temporary password
+$newPwd = ConvertTo-SecureString "TempPass2026!" -AsPlainText -Force
+Set-ADAccountPassword -Identity "sarah.johnson" -Reset -NewPassword $newPwd
+
+# Force change at next logon (the critical security control)
+Set-ADUser -Identity "sarah.johnson" -ChangePasswordAtLogon $true
+```
+
+### Expected Outcome
+The temporary password is accepted, and the account is flagged to force a change at
+next logon (`pwdLastSet: 0`, `PasswordExpired: True`). The user logs in once with the
+temp password and is immediately required to set a new private password.
+
+**Verification used here:** the new password was proven functional by temporarily
+clearing the change-at-next-logon flag, authenticating with the temp password
+(SUCCESS), then restoring the flag — confirming both that the reset worked and that the
+security control is back in place.
+
+![Password reset verified](Scenario%202%20powershell%20check.png)
+
+### Common Mistakes
+- **"The server has rejected the client credentials" after a reset is NOT necessarily a
+  failure.** When *change-at-next-logon* is set, a normal authentication bind is
+  blocked until the password is changed — producing a "rejected credentials" message
+  even though the password is correct. Do not assume the reset failed; verify properly
+  (temporarily clear the flag, test, then restore it).
+- **Forgetting to tick "must change at next logon"** — leaves the admin's temporary
+  password as the user's live credential. A security failure.
+- **Choosing a temp password that fails the policy** — Tier 2 requires 12+ characters
+  with complexity; a weak temp password is rejected.
+- **Confusing reset with unlock** — if the user knows their password and is only locked
+  out, unlock (Scenario 1); do not reset.
+
+### Escalation Path
+- User cannot change the password at next logon despite the flag → check the applicable
+  FGPP and any "User cannot change password" setting on the account.
+- Repeated reset requests from the same user in a short period → possible account
+  compromise or training issue → flag to **Tier 2 / Security**.
+
+### Evidence Captured
+| Evidence | File |
+|---|---|
+| ADUC reset dialog (fix) | `Scenario 2 AD Password Reset.png` |
+| Password verified working (proof) | `Scenario 2 powershell check.png` |
+
+---
