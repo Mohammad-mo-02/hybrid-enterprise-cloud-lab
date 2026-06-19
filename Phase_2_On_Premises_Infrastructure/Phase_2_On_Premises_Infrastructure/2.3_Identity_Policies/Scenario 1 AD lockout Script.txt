@@ -1,0 +1,19 @@
+# --- Re-lock sarah.johnson so we can demonstrate the PowerShell unlock ---
+$wrongPassword = ConvertTo-SecureString "DefinitelyWrongPassword123!" -AsPlainText -Force
+for ($i = 1; $i -le 6; $i++) {
+    $cred = New-Object System.Management.Automation.PSCredential("sarah.johnson", $wrongPassword)
+    try { Get-ADUser -Identity "sarah.johnson" -Credential $cred -Server "corp.infralab.local" -ErrorAction Stop | Out-Null }
+    catch { Write-Host "Attempt $i : failed logon (expected)" -ForegroundColor DarkGray }
+}
+
+# Confirm it's locked again
+Write-Host "`n--- Locked status BEFORE PowerShell unlock ---" -ForegroundColor Cyan
+Get-ADUser -Identity "sarah.johnson" -Properties LockedOut | Select-Object Name, LockedOut
+
+# --- THE UNLOCK: this single line is the whole help-desk action ---
+Write-Host "`n--- Running Unlock-ADAccount ---" -ForegroundColor Yellow
+Unlock-ADAccount -Identity "sarah.johnson"
+
+# Confirm it worked
+Write-Host "`n--- Locked status AFTER PowerShell unlock ---" -ForegroundColor Cyan
+Get-ADUser -Identity "sarah.johnson" -Properties LockedOut | Select-Object Name, LockedOut
