@@ -555,3 +555,62 @@ the root cause — directing the correct fix (unlock, reset, enable, adjust hour
 | Event Viewer 4625 detail | `Scenario 7 event viewer 4625.png` |
 
 ---
+## Scenario 8: Verifying and Correcting Manager Hierarchies
+
+**Ticket Example:** *"My leave requests are going to the wrong manager,"* or *"HR needs the reporting line for this employee confirmed/corrected."*
+
+### Background
+Every account has a **Manager** attribute — a *link* (distinguished name reference) to
+another user object, not free text. It drives org charts, approval/workflow routing
+(leave, expenses), and some delegated permissions. Because it is referential, a wrong
+value silently misroutes approvals. The task: read the current manager, and set the
+correct one.
+
+### Diagnosis — PowerShell (CLI)
+```powershell
+Get-ADUser -Identity "sarah.johnson" -Properties Manager | Select-Object Name, Manager | Format-List
+
+# Resolve the manager DN to a readable name
+$mgr = (Get-ADUser -Identity "sarah.johnson" -Properties Manager).Manager
+if ($mgr) { (Get-ADUser -Identity $mgr).Name }
+```
+
+### Resolution — PowerShell (CLI)
+```powershell
+Set-ADUser -Identity "sarah.johnson" -Manager "amelia.walls"
+```
+(Confirm the manager's SamAccountName first with
+`Get-ADUser -Filter "Name -like 'Amelia Walls*'"` if unsure.)
+
+![PowerShell manager corrected](Scenario%208%20powershell%20manager.png)
+
+### Resolution — ADUC (GUI)
+1. User **Properties → Organization** tab.
+2. **Manager** section → **Change...** → enter the manager's name → **Check Names** → **OK**.
+3. **Apply** → **OK**.
+
+![ADUC Organization tab manager](Scenario%208%20ADUC%20organization%20manager.png)
+
+### Expected Outcome
+The Manager attribute references the correct user; it resolves to the intended manager's
+name and appears on the Organization tab. Approval workflows now route correctly.
+
+### Common Mistakes
+- **Typing a name as text instead of linking the object** — the Manager field must
+  resolve to a real account (Check Names / valid SamAccountName); an unresolved value
+  fails.
+- **Correcting the report but not the reverse** — the manager's **Direct reports** list
+  updates automatically from this link; don't try to edit it manually.
+- **Circular references** — don't set two users as each other's manager.
+
+### Escalation Path
+- Reporting line change is part of a reorganisation affecting many users → coordinate
+  with **HR** for a bulk, authoritative update rather than ad hoc edits.
+
+### Evidence Captured
+| Evidence | File |
+|---|---|
+| PowerShell manager corrected | `Scenario 8 powershell manager.png` |
+| ADUC Organization tab | `Scenario 8 ADUC organization manager.png` |
+
+---
