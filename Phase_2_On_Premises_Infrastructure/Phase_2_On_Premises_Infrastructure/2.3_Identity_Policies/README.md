@@ -420,3 +420,68 @@ remains (cannot be removed; harmless while account is disabled).
 | Disabled + leaver-tagged + group removed | `Scenario 5 offboarding disabled.png` |
 
 ---
+## Scenario 6: Managing First-Logon Password Changes
+
+**Ticket Example:** *"The new starter can't log in — it keeps demanding a password change,"* or *"Please force this user to reset their password at next login."*
+
+### Background
+The **"user must change password at next logon"** flag ensures only the user knows their
+final password after any admin-set or initial password. Technically it is the
+`pwdLastSet` attribute: a value of **0** means the flag is **ON** (change required); a
+**timestamp** means the user has set their own password (flag OFF). When ON, the account
+also reports `PasswordExpired: True` — by design, to force the change. Understanding that
+`pwdLastSet = 0` is the underlying mechanism is the core knowledge for this scenario.
+
+### Diagnosis
+Read the flag (translating the raw attribute into a readable True/False):
+```powershell
+Get-ADUser -Identity "sarah.johnson" -Properties pwdLastSet, PasswordExpired |
+    Select-Object Name,
+        @{N='MustChangeAtLogon';E={$_.pwdLastSet -eq 0}},
+        PasswordExpired | Format-List
+```
+
+### Resolution — PowerShell (CLI)
+```powershell
+# Force change at next logon ON:
+Set-ADUser -Identity "sarah.johnson" -ChangePasswordAtLogon $true
+
+# To clear it (user keeps current password) — used when the prompt is unwanted:
+Set-ADUser -Identity "sarah.johnson" -ChangePasswordAtLogon $false
+```
+
+### Resolution — ADUC (GUI)
+1. ADUC → right-click domain root → **Find** → `sarah.johnson` → **Find Now**.
+2. Double-click user → **Account** tab.
+3. In **Account options**, tick **"User must change password at next logon."**
+4. **Apply** → **OK**.
+
+![ADUC first-logon flag](Scenario%206%20ADUC%20first%20logon%20flag.png)
+
+### Expected Outcome
+With the flag ON: `MustChangeAtLogon = True`, `PasswordExpired = True`; the user is
+prompted to set a new password at next login. With it OFF: the user retains their current
+password and is not prompted.
+
+![First-logon flag state](Scenario%206%20first%20logon%20flag.png)
+
+### Common Mistakes
+- **"Must change at next logon" cannot coexist with "password never expires"** — AD
+  rejects setting both; they are contradictory. (Relevant to service accounts.)
+- **Reading `pwdLastSet` literally** — a blank/0 value is not "no password," it means the
+  forced-change flag is set.
+- **Repeated change prompts** — if a user is prompted every login, check the password is
+  actually being saved successfully and that no policy is forcing immediate expiry.
+
+### Escalation Path
+- User genuinely cannot complete the change (error at the change-password screen) → check
+  the applicable FGPP (the new password must satisfy length/complexity) and any "user
+  cannot change password" flag → escalate to **Tier 2** if unresolved.
+
+### Evidence Captured
+| Evidence | File |
+|---|---|
+| ADUC Account tab (flag ticked) | `Scenario 6 ADUC first logon flag.png` |
+| PowerShell flag state before/after | `Scenario 6 first logon flag.png` |
+
+---
