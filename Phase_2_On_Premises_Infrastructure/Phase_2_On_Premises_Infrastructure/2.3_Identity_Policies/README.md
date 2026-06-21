@@ -311,3 +311,53 @@ added and old access removed — a complete correction.
 | After (Finance, Sales removed) | `Scenario 3 after Finance corrected.png` |
 
 ---
+## Scenario 4: New Employee Onboarding
+
+**Ticket Example:** *"New starter Tom Baker joins Finance on Monday — please create his account and access."*
+
+### Background
+Onboarding applies **least privilege from day one**: the account is created, placed in
+the correct departmental OU, granted only its role-based groups (department + tier), and
+forced to set a private password at first logon. A complete onboard = identity + correct
+location + correct group access + forced password change — not just "create a user."
+
+### Resolution — PowerShell (CLI)
+```powershell
+$pwd = ConvertTo-SecureString "Welcome2026!Start" -AsPlainText -Force
+New-ADUser -Name "Tom Baker" -GivenName "Tom" -Surname "Baker" `
+    -SamAccountName "tom.baker" -UserPrincipalName "tom.baker@corp.infralab.local" `
+    -DisplayName "Tom Baker" -Title "Finance Analyst" -Department "Finance" `
+    -Path "OU=Finance,OU=Departments,OU=Administration,DC=corp,DC=infralab,DC=local" `
+    -AccountPassword $pwd -Enabled $true -ChangePasswordAtLogon $true
+Add-ADGroupMember -Identity "SG-Finance-Staff" -Members "tom.baker"
+Add-ADGroupMember -Identity "SG-Tier2-Users"   -Members "tom.baker"
+```
+
+### Resolution — ADUC (GUI) equivalent
+Right-click target OU → **New → User** → complete wizard, tick **"User must change
+password at next logon"** → then **Member Of** tab → **Add** department and tier groups.
+
+### Expected Outcome
+Account exists in the Finance OU, Enabled, Department populated, member of
+`SG-Finance-Staff`, `SG-Tier2-Users` and `Domain Users`, flagged to change password at
+first logon.
+
+![New starter onboarded](Scenario%204%20new%20starter%20onboarded.png)
+
+### Common Mistakes
+- **Creating the account but forgetting group membership** — user exists but can't
+  access anything ("I'm set up but nothing works").
+- **Skipping change-at-next-logon** — admin's temp password becomes the live credential.
+- **Wrong OU placement** — breaks any OU-targeted GPO and department-based logic.
+- **Over-granting "to be safe"** — violates least privilege; grant only role groups.
+
+### Escalation Path
+- Starter needs access beyond standard role (e.g. cross-department systems) → route to
+  **resource owner / manager approval**, do not grant ad hoc.
+
+### Evidence Captured
+| Evidence | File |
+|---|---|
+| Onboarded user + groups | `Scenario 4 new starter onboarded.png` |
+
+---
