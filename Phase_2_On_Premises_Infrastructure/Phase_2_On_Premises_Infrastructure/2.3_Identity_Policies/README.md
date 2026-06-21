@@ -614,3 +614,76 @@ name and appears on the Organization tab. Approval workflows now route correctly
 | ADUC Organization tab | `Scenario 8 ADUC organization manager.png` |
 
 ---
+## Scenario 10: Service Account Management
+
+**Ticket Example:** *"The backup job has stopped running — can you check the service account?"* or *"Please rotate the credentials on the monitoring service account."*
+
+### Background
+**Service accounts** are non-human identities used by services, scripts and scheduled
+tasks (e.g. `svc-ansible`, `svc-backup`, `svc-sql`, `svc-monitoring`). They are configured
+*opposite* to human accounts: **password never expires** (no human to respond to expiry),
+**cannot change password**, and **no interactive logon**. Each automated task has its own
+scoped identity — least privilege for machines — so a leaked credential is contained to
+one service (limited **blast radius**) rather than a shared super-account.
+
+> Modern best practice favours **group Managed Service Accounts (gMSAs)**, which
+> auto-rotate passwords and remove the "never expires" trade-off. Standard service
+> accounts are used here for simplicity and spec alignment.
+
+### Diagnosis — PowerShell (CLI): audit all service accounts
+```powershell
+Get-ADUser -Filter * -SearchBase "OU=ServiceAccounts,OU=Administration,DC=corp,DC=infralab,DC=local" `
+    -Properties PasswordNeverExpires, CannotChangePassword, Enabled, Description |
+    Select-Object Name, Enabled, PasswordNeverExpires, CannotChangePassword, Description |
+    Format-Table -AutoSize
+```
+
+![Service account audit](Scenario%2010%20powershell%20service%20audit.png)
+
+### Resolution — PowerShell (CLI): rotate a service account password
+```powershell
+$newSvcPwd = ConvertTo-SecureString ("Svc!" + [guid]::NewGuid().ToString().Substring(0,16)) -AsPlainText -Force
+Set-ADAccountPassword -Identity "svc-monitoring" -Reset -NewPassword $newSvcPwd
+```
+**Critical:** in production the new password must be updated in the service/scheduled
+task configuration *at the same time*, or the service fails to authenticate and stops.
+
+![Service account reset](Scenario%2010%20powershell%20svc%20reset.png)
+
+### Resolution — ADUC (GUI)
+1. Navigate to **Administration → ServiceAccounts** OU (or **Find** the account).
+2. **Account** tab → confirm **"Password never expires"** is ticked.
+3. To rotate: right-click → **Reset Password** → set value → **OK** (then update the
+   service config).
+
+![ADUC service account](Scenario%2010%20ADUC%20service%20account.png)
+
+### Expected Outcome
+Service accounts audited and confirmed: Enabled, PasswordNeverExpires True, purpose
+documented. Password rotation completes without disturbing the service-account flags.
+
+### Common Mistakes
+- **Rotating the password without updating the service** — the single biggest cause of
+  "the service suddenly stopped" — the account is fine, but the service holds the old
+  password.
+- **Setting "must change at next logon" on a service account** — incompatible with
+  "password never expires" and impossible for a non-interactive account to satisfy.
+- **Allowing interactive logon / over-privileging** — service accounts should be scoped
+  to only what the service needs; a broad service account is a high-value target.
+- **Letting a service account expire** — defeats the "never expires" requirement and
+  causes the service to fail silently at an unpredictable time.
+
+### Escalation Path
+- A service breaks after a credential change → coordinate with the **service/application
+  owner** to update the stored credential; do not repeatedly reset.
+- Service account requires elevated rights → review with **Security**; consider migrating
+  to a **gMSA** for auto-rotation.
+
+### Evidence Captured
+| Evidence | File |
+|---|---|
+| Service account audit | `Scenario 10 powershell service audit.png` |
+| Password rotation | `Scenario 10 powershell svc reset.png` |
+| ADUC service account config | `Scenario 10 ADUC service account.png` |
+
+---
