@@ -485,3 +485,73 @@ password and is not prompted.
 | PowerShell flag state before/after | `Scenario 6 first logon flag.png` |
 
 ---
+## Scenario 7: Investigating a Logon Failure via Event Viewer
+
+**Ticket Example:** *"My login keeps failing and I don't know why — can you find out what's happening?"*
+
+### Background
+The Windows **Security audit log** on the domain controller records every logon attempt.
+Investigation is done by reading it, keyed on **Event IDs**:
+- **4625** — an account failed to log on (contains a *failure reason / status code*)
+- **4740** — an account was locked out
+- **4624** — a successful logon
+
+The value of a 4625 event is the **status code**, which states *why* the logon failed
+(bad password, disabled account, locked account, logon-hours violation, etc.). This turns
+"login failed" into an actionable root cause. (Requires audit logging enabled — Logon =
+Success and Failure — configured during environment setup.)
+
+### Diagnosis — PowerShell (CLI)
+```powershell
+Get-WinEvent -FilterHashtable @{LogName='Security'; Id=4625} -MaxEvents 3 |
+    ForEach-Object {
+        Write-Host "Time:    $($_.TimeCreated)"
+        Write-Host "Account: $($_.Properties[5].Value)"
+        Write-Host "Status:  $($_.Properties[7].Value)"
+    }
+```
+Returns recent failed-logon events with account name and failure status code.
+
+![PowerShell failed logon query](Scenario%207%20powershell%20failed%20logon.png)
+
+### Diagnosis — Event Viewer (GUI)
+1. **Event Viewer** → **Windows Logs** → **Security**.
+2. **Filter Current Log...** → enter Event ID **4625** → **OK**.
+3. Select the most recent event → read the **General** tab:
+   - **Account For Which Logon Failed** — the affected user.
+   - **Failure Information / Status** — the reason code explaining the failure.
+
+![Event Viewer 4625 event](Scenario%207%20event%20viewer%204625.png)
+
+### Common Failure Status Codes (reference)
+- `0xC000006A` — wrong password
+- `0xC0000234` — account locked out
+- `0xC0000072` — account disabled
+- `0xC000006F` — logon outside permitted hours
+- `0xC0000064` — user name does not exist
+
+### Expected Outcome
+The failed logon is located, the affected account identified, and the status code reveals
+the root cause — directing the correct fix (unlock, reset, enable, adjust hours).
+
+### Common Mistakes
+- **Treating "login failed" as one problem** — the status code distinguishes wrong
+  password from locked, disabled, or hours violations; each has a different fix.
+- **Not checking the source** — repeated 4625s from one workstation suggest a stale
+  cached credential or mapped drive, not user error (links to Scenario 1 re-lock cause).
+- **Ignoring volume** — many 4625s across many accounts can indicate a brute-force
+  attack, not a support issue → Security.
+
+### Escalation Path
+- High volume of failed logons across multiple accounts, or from unexpected sources →
+  escalate to **Security** as a possible attack.
+- Status code indicates a configuration issue (e.g. logon hours, disabled) requiring
+  policy change → **Tier 2**.
+
+### Evidence Captured
+| Evidence | File |
+|---|---|
+| PowerShell 4625 query | `Scenario 7 powershell failed logon.png` |
+| Event Viewer 4625 detail | `Scenario 7 event viewer 4625.png` |
+
+---
