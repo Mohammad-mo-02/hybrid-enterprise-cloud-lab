@@ -361,3 +361,62 @@ first logon.
 | Onboarded user + groups | `Scenario 4 new starter onboarded.png` |
 
 ---
+## Scenario 5: Employee Termination (Offboarding)
+
+**Ticket Example:** *"Tom Baker has left the company effective today — please disable his access immediately."*
+
+### Background
+Offboarding follows **disable, don't delete**. The account is disabled (instant access
+cut-off), its password reset (invalidates any cached or active credential), group
+memberships stripped, and the account tagged as a leaver for audit. It is retained — not
+deleted — because it may own files, a mailbox, or be referenced by other systems, and
+because audit/retention policy usually requires keeping it for a defined period.
+Deleting immediately destroys ownership links and audit history. A live account for a
+departed employee is a significant **blast radius** risk.
+
+### Resolution — PowerShell (CLI)
+```powershell
+# Disable, reset password, tag as leaver, remove department access
+Disable-ADAccount -Identity "tom.baker"
+
+$randomPwd = ConvertTo-SecureString ("Offb!" + [guid]::NewGuid().ToString().Substring(0,12)) -AsPlainText -Force
+Set-ADAccountPassword -Identity "tom.baker" -Reset -NewPassword $randomPwd
+
+Set-ADUser -Identity "tom.baker" -Description "LEAVER - disabled <date> - pending deletion after retention period"
+Remove-ADGroupMember -Identity "SG-Finance-Staff" -Members "tom.baker" -Confirm:$false
+```
+
+### Resolution — ADUC (GUI) equivalent
+Right-click user → **Disable Account**. Right-click → **Reset Password** (set a random
+value). **Member Of** tab → remove department/tier groups. **Properties → Description** →
+record leaver date.
+
+### Expected Outcome
+`Enabled: False`, leaver note recorded in Description, department group removed. Account
+retained (disabled) pending the retention period, then deleted per policy. `Domain Users`
+remains (cannot be removed; harmless while account is disabled).
+
+![Offboarding disabled](Scenario%205%20offboarding%20disabled.png)
+
+### Common Mistakes
+- **Deleting instead of disabling** — destroys file ownership, mailbox access and audit
+  trail; irreversible.
+- **Disabling but not resetting the password** — cached credentials or active sessions
+  (e.g. mobile mail) may persist; resetting forces re-authentication that now fails.
+- **Leaving group memberships intact** — if the account is ever re-enabled in error, it
+  regains full access instantly.
+- **No audit note** — nobody can tell later why the account is disabled or when it can be
+  purged.
+
+### Escalation Path
+- Account owns shared resources / mailbox needing handover → coordinate with **manager
+  and resource owners** before retention period expires and the account is deleted.
+- Suspected malicious leaver → escalate to **Security** for immediate session
+  revocation and access review.
+
+### Evidence Captured
+| Evidence | File |
+|---|---|
+| Disabled + leaver-tagged + group removed | `Scenario 5 offboarding disabled.png` |
+
+---
