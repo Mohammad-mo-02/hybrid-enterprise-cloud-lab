@@ -247,3 +247,67 @@ security control is back in place.
 | Password verified working (proof) | `Scenario 2 powershell check.png` |
 
 ---
+## Scenario 3: Correcting Group Assignments
+
+**Ticket Example:** *"Sarah Johnson has transferred from Sales to Finance — please update her access. She still can't open Finance files and can still see Sales material she shouldn't."*
+
+### Background
+Group membership is the engine of **least privilege** in Active Directory: access is
+granted to *groups* (roles), and users inherit it via membership. When a user changes
+role, the correction has **two halves** — *add* the new access and *remove* the old.
+Forgetting the removal causes **privilege creep**: access accumulates across roles until
+a single compromised account can reach everything (a large **blast radius**). Removing
+old access is as important as granting new access.
+
+### Diagnosis
+List current membership before acting:
+```powershell
+Get-ADPrincipalGroupMembership -Identity "sarah.johnson" | Select-Object Name | Sort-Object Name
+```
+A user transferring departments will still show their **old** department group — that is
+the access to remove.
+
+![Before — Sales membership](Scenario%203%20before%20Sales%20membership.png)
+
+### Resolution — Method A: ADUC (GUI)
+1. ADUC → right-click domain root → **Find** → `sarah.johnson` → **Find Now**.
+2. Double-click the user → **Member Of** tab.
+3. Select the old group (`SG-Sales-Staff`) → **Remove** → confirm.
+4. **Add...** → type `SG-Finance-Staff` → **Check Names** → **OK**.
+5. **Apply** → **OK**.
+
+![After — Member Of corrected](Scenario%203%20AD%20Member%20Of%20corrected.png)
+
+### Resolution — Method B: PowerShell (CLI)
+```powershell
+Remove-ADGroupMember -Identity "SG-Sales-Staff" -Members "sarah.johnson" -Confirm:$false
+Add-ADGroupMember    -Identity "SG-Finance-Staff" -Members "sarah.johnson"
+```
+
+### Expected Outcome
+Membership shows `SG-Finance-Staff` present and `SG-Sales-Staff` **absent**. Access
+added and old access removed — a complete correction.
+
+![After — Finance corrected](Scenario%203%20after%20Finance%20corrected.png)
+
+### Common Mistakes
+- **Adding new access but not removing the old** — the single most common error;
+  causes privilege creep and widens blast radius.
+- **Group changes don't apply until the user logs off/on** — a new Kerberos token is
+  issued at logon; an existing session keeps the old membership until then.
+- **Editing individual permissions instead of group membership** — bypasses the
+  role-based model and creates unmanageable one-off access.
+
+### Escalation Path
+- User still lacks access after re-logon → check whether the *resource* (file share) is
+  actually permissioned to `SG-Finance-Staff`, and check for nested group / deny-rule
+  conflicts → escalate to **Tier 2**.
+
+### Evidence Captured
+| Evidence | File |
+|---|---|
+| Before (Sales) | `Scenario 3 before Sales membership.png` |
+| ADUC Member Of corrected | `Scenario 3 AD Member Of corrected.png` |
+| After (Finance, Sales removed) | `Scenario 3 after Finance corrected.png` |
+
+---
