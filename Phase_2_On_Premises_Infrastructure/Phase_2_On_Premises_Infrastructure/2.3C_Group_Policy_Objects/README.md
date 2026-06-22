@@ -173,3 +173,108 @@ Windows client placed in the Devices OU (Phase 4.2) would inherit the block auto
 | Link + USBSTOR setting verified | `GPO2 USB restriction verify.png` |
 
 ---
+## GPO 3: Domain-Wide Security & Audit Baseline
+
+### Objective
+Enable consistent **security audit logging** across the entire domain so that security-
+relevant events are recorded for accountability, detection and incident investigation.
+Where GPOs 1 and 2 *prevent* actions, this GPO *detects and records* them — you cannot
+investigate what you do not log. The failed-logon events read in Scenario 7 (Event ID
+4625) exist precisely because this kind of auditing is enabled. Audit logging is a near-
+universal compliance requirement (ISO 27001, PCI-DSS, SOC 2, GDPR).
+
+### Why this links at the DOMAIN ROOT
+Unlike GPO 1 (Departments OU / users) and GPO 2 (Devices OU / computers), an audit
+baseline must cover **everything** — all users, all computers, and the domain controller
+itself. It is therefore linked at the **domain root**, the highest level, so the entire
+domain inherits it. This demonstrates matching **link scope to purpose**: user policy at
+the user OU, computer policy at the computer OU, baseline at the domain.
+
+### Settings configured (Computer Configuration → Advanced Audit Policy)
+Audit policy is not a simple registry value; it is configured through **Advanced Audit
+Policy Configuration** (GPMC editor) or the `auditpol` utility. The following
+subcategories were set to **Success and Failure**:
+
+| Category | Subcategory | Captures |
+|---|---|---|
+| Logon/Logoff | Audit Logon | Who logs in / fails to log in |
+| Account Management | Audit User Account Management | Account create/delete/reset/modify |
+| Account Logon | Audit Credential Validation | Credential checks (DC validates passwords) |
+| Policy Change | Audit Audit Policy Change | Changes to the audit policy itself (tamper detection) |
+
+### Implementation — GPMC (GUI)
+GPMC → Group Policy Objects → **Domain-Security-Audit-Baseline** → **Edit** →
+Computer Configuration → Policies → Windows Settings → Security Settings →
+**Advanced Audit Policy Configuration → Audit Policies** → for each subcategory above:
+double-click → "Configure the following audit events" → tick **Success** + **Failure** → OK.
+
+![GPO3 audit policy in editor](GPO3%20audit%20policy%20editor.png)
+
+### Implementation — equivalent code (auditpol)
+The same settings applied directly to a machine (local, immediate):
+```powershell
+auditpol /set /subcategory:"Logon" /success:enable /failure:enable
+auditpol /set /subcategory:"User Account Management" /success:enable /failure:enable
+auditpol /set /subcategory:"Credential Validation" /success:enable /failure:enable
+auditpol /set /subcategory:"Audit Policy Change" /success:enable /failure:enable
+
+# View current audit state:
+auditpol /get /category:"Logon/Logoff","Account Management","Account Logon","Policy Change"
+```
+> Note: `auditpol /set` applies to the **local machine immediately**; configuring the same
+> settings **in the GPO** pushes them to every machine the GPO reaches. The GPO route is
+> the scalable, centrally-managed one.
+
+![GPO3 audit state verified](GPO3%20audit%20policy%20verify.png)
+
+### Link — PowerShell
+```powershell
+New-GPLink -Name "Domain-Security-Audit-Baseline" `
+    -Target "DC=corp,DC=infralab,DC=local" -LinkEnabled Yes
+```
+Links at the domain root (Order 2, alongside the built-in Default Domain Policy at Order 1).
+
+### Verification — GPMC + PowerShell
+GPMC → `corp.infralab.local` (domain root) → Linked Group Policy Objects shows
+`Domain-Security-Audit-Baseline`, Link Enabled: Yes, Status: Enabled.
+
+![GPO3 linked at domain root](GPO3%20all%20gpos%20GPMC.png)
+
+```powershell
+Get-GPO -All |
+    Where-Object { $_.DisplayName -in @("User-Workstation-Lock-Policy","Admin-Removable-Media-Restriction","Domain-Security-Audit-Baseline") } |
+    Select-Object DisplayName, GpoStatus,
+        @{N='UserVer';E={$_.User.DSVersion}}, @{N='CompVer';E={$_.Computer.DSVersion}}
+```
+
+### Reading the version-number signature (all three GPOs)
+| GPO | UserVer | CompVer | Type |
+|---|---|---|---|
+| User-Workstation-Lock-Policy | 3 | 0 | User policy |
+| Admin-Removable-Media-Restriction | 0 | 3 | Computer policy |
+| Domain-Security-Audit-Baseline | 0 | 4 | Computer policy |
+
+The version counters reveal which half of each GPO carries settings — a key diagnostic
+for Scenario 9.
+
+### Evidence Captured
+| Evidence | File |
+|---|---|
+| Audit subcategories configured (editor) | `GPO3 audit policy editor.png` |
+| Audit state + auditpol commands | `GPO3 audit policy verify.png` |
+| Linked at domain root / all GPOs | `GPO3 all gpos GPMC.png` |
+
+---
+
+## Phase 2.3C Summary
+
+| GPO | Linked To | Configuration | Purpose |
+|---|---|---|---|
+| User-Workstation-Lock-Policy | Departments OU | User (HKCU) | 15-min password-protected screen lock |
+| Admin-Removable-Media-Restriction | Devices OU | Computer (HKLM) | Block USB mass storage (read/write) |
+| Domain-Security-Audit-Baseline | Domain root | Computer (Audit) | Domain-wide security audit logging |
+
+Each GPO is linked at the level appropriate to its target (users / computers / entire
+domain), demonstrating GPO inheritance, the user-vs-computer configuration model, and
+matching link scope to purpose. All three created, configured, linked and verified via
+both GPMC and PowerShell.
