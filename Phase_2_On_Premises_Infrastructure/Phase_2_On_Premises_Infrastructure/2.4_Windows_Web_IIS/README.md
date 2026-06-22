@@ -152,6 +152,7 @@ Registry re-read confirms the persistent state:
 
 ![TLS state before hardening](2.4%20TLS%20before%20hardening.png)
 ![TLS state after hardening](2.4%20TLS%20hardened%20state.png)
+![Corporate page](2.4%20IIS%20corporate%20page.png)
 
 ### Important distinction — hardening ≠ HTTPS enabled
 Protocol hardening controls *which* TLS versions Schannel will use *if* a TLS connection
