@@ -14,7 +14,8 @@
 |-------|------|-------|------|------|--------|
 | CR-2026-0619-001 | 2026-06-19 | Phase 2.2 Corrective Action — User OU Distribution & Tiered Admin Structure | Normal (Corrective) | Medium | Implemented & Verified |
 | CR-2026-0619-002 | 2026-06-19 | Phase 2.3A — Fine-Grained Password Policy Implementation | Normal | Low | Implemented & Verified |
-
+| CR-2026-0620-003 | 2026-06-20 | Phase 2.3B Prerequisites & Service Desk Runbook | Normal | Low | Implemented & Verified |
+| CR-2026-0622-004 | 2026-06-22 | Phase 2.3C Group Policy Object (GPO 1 of 3) | Normal | Low | In Progress |
 ---
 
 ## CR-2026-0619-001
@@ -120,3 +121,95 @@ Remove-ADFineGrainedPasswordPolicy for each of the three PSOs. Users revert to t
 - **Resolution:** Switched to New-TimeSpan, which correctly converts 60 min = 1 hr.
 - **Lesson:** Build time values with native cmdlets, not string concatenation.
 - **Closure:** Approved — prerequisites for Phase 2.3B satisfied.
+
+## CR-2026-0620-003
+
+**Title:** Phase 2.3B Prerequisites & Service Desk Runbook
+**Date Raised:** June 20, 2026
+**Raised By:** Mohammad (Infrastructure Engineer)
+**Change Type:** Normal
+**Priority:** Medium
+**Status:** Implemented & Verified
+
+### Change Summary
+Closed two outstanding gaps from Phase 2.2 and produced the Service Desk Runbook:
+1. Created the ten missing department staff security groups (only Finance and IT existed).
+2. Created four dedicated service accounts in the ServiceAccounts OU (svc-ansible, svc-backup, svc-sql, svc-monitoring).
+3. Executed and documented nine help-desk scenarios against live accounts (account unlock, password reset, group assignment correction, onboarding, offboarding, first-logon flag, logon-failure investigation, manager hierarchy, service account management).
+
+### Risk Level
+**LOW** — Lab environment, additive changes, idempotent scripts with transcript logging. Offboarding/onboarding performed on a disposable test account (tom.baker).
+
+### Impact Analysis
+- **Systems Affected:** WS2022-DC01
+- **Objects Created:** 10 department staff groups, 4 service accounts, 1 test user (tom.baker, subsequently offboarded)
+- **Objects Modified:** sarah.johnson (used as test subject across scenarios — unlocked, password reset, group membership, manager set)
+- **Downtime:** None
+- **Dependency Impact:** Positive — department groups and service accounts required by later phases (Entra Connect sync Phase 4; svc-ansible required by Phase 3.5).
+
+### Implementation Steps
+1. Ran Create-DepartmentStaffGroups.ps1 — created 10 groups (idempotent).
+2. Ran Create-ServiceAccounts.ps1 — created 4 service accounts with password-never-expires / cannot-change-password flags.
+3. Performed nine Service Desk scenarios in ADUC and PowerShell; captured evidence screenshots.
+
+### Verification Evidence
+- All 12 department staff groups confirmed via Get-ADGroup.
+- 4 service accounts confirmed via Get-ADUser (PasswordNeverExpires = True).
+- Runbook README with per-scenario evidence committed to GitHub.
+
+### Rollback Plan
+- Remove-ADGroup for the 10 department groups; Remove-ADUser for the 4 service accounts and tom.baker.
+- Scenario actions on sarah.johnson are reversible (re-unlock, re-set membership/manager as needed).
+- AD Recycle Bin enabled for object recovery.
+
+### Post-Implementation Review
+- **Root Cause (gaps):** Original 2.2 infrastructure script created only sample groups and no service accounts.
+- **Lesson Learned:** Verify per-department group model and service-account provisioning at 2.2 completion, not at point of dependency.
+- **Closure:** Approved — prerequisites satisfied; runbook complete (9 of 10 scenarios; Scenario 9 deferred pending GPOs in 2.3C).
+
+---
+
+## CR-2026-0622-004
+
+**Title:** Phase 2.3C Group Policy Object Implementation (GPO 1 of 3)
+**Date Raised:** June 22, 2026
+**Raised By:** Mohammad (Infrastructure Engineer)
+**Change Type:** Normal
+**Priority:** Medium
+**Status:** In Progress (GPO 1 complete; GPOs 2 and 3 pending)
+
+### Change Summary
+Began Phase 2.3C Group Policy implementation. Created, configured, linked and verified the
+first of three GPOs: User-Workstation-Lock-Policy, enforcing a password-protected screen
+lock after 15 minutes idle, linked to the Departments OU (inherited by all department
+sub-OUs).
+
+### Risk Level
+**LOW** — Lab environment, additive change, no modification to built-in default GPOs.
+
+### Impact Analysis
+- **Systems Affected:** WS2022-DC01 and (when present) all user objects under the Departments OU.
+- **Objects Created:** 1 GPO (User-Workstation-Lock-Policy), 1 GPO link on Departments OU.
+- **Settings:** ScreenSaveActive=1, ScreenSaverIsSecure=1, ScreenSaveTimeOut=900 (User Configuration / HKCU).
+- **Downtime:** None.
+- **Note:** Visible end-user application requires a domain-joined client (Phase 4.2); GPO is created, linked and verified on the DC.
+
+### Implementation Steps
+1. New-GPO to create the policy container.
+2. Set-GPRegistryValue x3 to configure the screen-lock settings.
+3. New-GPLink to link the GPO to the Departments OU.
+4. Verified via GPMC (link enabled, status enabled) and PowerShell (Get-GPInheritance, Get-GPRegistryValue).
+
+### Verification Evidence
+- GPMC shows GPO linked to Departments OU, Link Enabled: Yes, GPO Status: Enabled.
+- PowerShell confirms link and the three stored registry settings.
+
+### Rollback Plan
+- Remove-GPLink to unlink from Departments OU.
+- Remove-GPO -Name "User-Workstation-Lock-Policy" to delete the GPO entirely.
+- Built-in default GPOs untouched.
+
+### Post-Implementation Review
+- **Status:** GPO 1 of 3 complete. CR remains open pending GPO 2 (Administrative / removable media) and GPO 3 (Domain-wide security/audit baseline), after which status moves to Implemented & Verified.
+
+---
