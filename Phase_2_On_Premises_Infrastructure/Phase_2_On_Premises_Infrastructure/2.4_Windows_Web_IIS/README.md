@@ -67,3 +67,113 @@ custom page (not the default) is being served.
 | Rendered corporate intranet page in browser | `2.4 IIS corporate page.png` |
 
 ---
+## Part 2: TLS Hardening
+
+### Objective
+Disable weak/legacy encryption protocols (SSL 2.0, SSL 3.0, TLS 1.0, TLS 1.1) and
+explicitly enforce strong TLS (1.2), so the server refuses to encrypt with broken protocols
+that are vulnerable to known attacks (POODLE, BEAST). A standard security-audit requirement
+(e.g. PCI-DSS mandates disabling weak protocols).
+
+### Core concept — where TLS is configured on Windows
+TLS hardening is **not** configured in IIS. Encryption on Windows is handled by **Schannel**
+(Secure Channel), an OS-level component that implements SSL/TLS for the *entire* system
+(IIS, RDP, and any other TLS service). IIS delegates encryption to Schannel. Schannel is
+configured via the **registry**, so hardening it secures every TLS service on the box, not
+just IIS. *(Principle: separation of concerns — IIS serves content, Schannel handles
+encryption; defence in depth at the OS layer.)*
+
+### The problem with defaults
+Before hardening, every protocol showed *"no explicit setting (OS default applies)."* "No
+setting" means "Windows decides" — and Windows defaults favour compatibility, leaving older
+protocols implicitly available. An attacker can force a connection to **downgrade** to a
+weak protocol and break the encryption. The fix is to take **explicit control**: weak
+protocols explicitly OFF, strong protocols explicitly ON. *(Principle: no insecure defaults
+/ explicit over implicit.)*
+
+### How Schannel protocol control works
+Each protocol has a registry path `...\SCHANNEL\Protocols\<protocol>\<Server|Client>` with
+two values that work together:
+- `Enabled` = 0 (off) / 1 (on)
+- `DisabledByDefault` = 1 (not offered) / 0 (offered)
+
+Disable = `Enabled 0` + `DisabledByDefault 1`. Enable = `Enabled 1` + `DisabledByDefault 0`.
+Both values are set (belt-and-braces) for both Server and Client roles. *(Principle: defence
+in depth — two reinforcing settings.)*
+
+### Implementation — PowerShell
+```powershell
+$base = "HKLM:\SYSTEM\CurrentControlSet\Control\SecurityProviders\SCHANNEL\Protocols"
+
+# Disable weak protocols (Server + Client)
+foreach ($protocol in @("SSL 2.0","SSL 3.0","TLS 1.0","TLS 1.1")) {
+    foreach ($role in @("Server","Client")) {
+        $path = "$base\$protocol\$role"
+        if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
+        New-ItemProperty -Path $path -Name "Enabled" -Value 0 -PropertyType DWord -Force | Out-Null
+        New-ItemProperty -Path $path -Name "DisabledByDefault" -Value 1 -PropertyType DWord -Force | Out-Null
+    }
+}
+
+# Explicitly enable TLS 1.2 (Server + Client)
+foreach ($role in @("Server","Client")) {
+    $path = "$base\TLS 1.2\$role"
+    if (-not (Test-Path $path)) { New-Item -Path $path -Force | Out-Null }
+    New-ItemProperty -Path $path -Name "Enabled" -Value 1 -PropertyType DWord -Force | Out-Null
+    New-ItemProperty -Path $path -Name "DisabledByDefault" -Value 0 -PropertyType DWord -Force | Out-Null
+}
+```
+GUI/tool equivalent: **IIS Crypto** (Nartac) provides a one-click GUI for the same registry
+changes. The PowerShell/registry method is used here to expose and understand every change
+(Automation First; no hidden wizard decisions).
+
+### Reboot required
+Schannel reads protocol configuration at startup, so a **reboot is required** for changes to
+take effect (`Restart-Computer -Force`). The registry holds the change immediately; the
+*running* system applies it after restart. *(Real-world note: TLS hardening is scheduled in a
+maintenance window because of this reboot.)*
+
+### Risk consideration (blast radius)
+Disabling legacy protocols cuts off any client that can *only* speak them. In this isolated
+lab all components support TLS 1.2+, so it is safe. In production one would first identify
+anything still using TLS 1.0/1.1 before disabling — the "what breaks if I remove this?"
+discipline.
+
+### Verification (after reboot)
+Registry re-read confirms the persistent state:
+
+| Protocol | Before | After |
+|---|---|---|
+| SSL 2.0 | OS default | **DISABLED** |
+| SSL 3.0 | OS default | **DISABLED** |
+| TLS 1.0 | OS default | **DISABLED** |
+| TLS 1.1 | OS default | **DISABLED** |
+| TLS 1.2 | OS default | **ENABLED** |
+
+![TLS state before hardening](2.4%20TLS%20before%20hardening.png)
+![TLS state after hardening](2.4%20TLS%20hardened%20state.png)
+
+### Important distinction — hardening ≠ HTTPS enabled
+Protocol hardening controls *which* TLS versions Schannel will use *if* a TLS connection
+occurs. It does **not** by itself make the site serve HTTPS — that additionally requires a
+**certificate** and a **port 443 binding**, which is **Phase 2.8**. A live TLS handshake test
+against port 443 currently returns "refused" simply because no HTTPS listener exists yet
+(IIS serves HTTP/80 only). The end-to-end handshake test (server accepts TLS 1.2, refuses
+1.0/1.1) will be performed in Phase 2.8 once the certificate and 443 binding are in place.
+
+### Evidence Captured
+| Evidence | File |
+|---|---|
+| Rendered corporate intranet page | `2.4 IIS corporate page.png` |
+| TLS protocols before hardening (OS defaults) | `2.4 TLS before hardening.png` |
+| TLS protocols after hardening (weak disabled, TLS 1.2 enabled) | `2.4 TLS hardened state.png` |
+
+---
+
+## Phase 2.4 Summary
+- Deployed IIS and served a custom enterprise corporate intranet page over HTTP (Part 1).
+- Hardened Schannel (OS-level TLS): explicitly disabled SSL 2.0/3.0 and TLS 1.0/1.1, and
+  explicitly enabled TLS 1.2, for both Server and Client roles; verified persistent through
+  reboot (Part 2 — Elite Standard).
+- HTTPS binding (certificate + port 443) deferred to Phase 2.8, where end-to-end HTTPS and a
+  live handshake test will complete the secure-web-service picture.
