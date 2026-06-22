@@ -16,6 +16,7 @@
 | CR-2026-0619-002 | 2026-06-19 | Phase 2.3A — Fine-Grained Password Policy Implementation | Normal | Low | Implemented & Verified |
 | CR-2026-0620-003 | 2026-06-20 | Phase 2.3B Prerequisites & Service Desk Runbook | Normal | Low | Implemented & Verified |
 | CR-2026-0622-004 | 2026-06-22 | Phase 2.3C Group Policy Object (GPO 1 of 3) | Normal | Low | Implemented & Verified  |
+| CR-2026-0622-005 | 2026-06-22 | Phase 2.4 IIS Web Service Deployment & TLS Hardening | Normal | Medium | Implemented & Verified |
 ---
 
 ## CR-2026-0619-001
@@ -211,5 +212,72 @@ sub-OUs).
 
 ### Post-Implementation Review
 - **Status:** GPO 1 of 3 complete. CR remains open pending GPO 2 (Administrative / removable media) and GPO 3 (Domain-wide security/audit baseline), after which status moves to Implemented & Verified.
+
+---
+## CR-2026-0622-005
+
+**Title:** Phase 2.4 IIS Web Service Deployment & TLS Hardening
+**Date Raised:** June 22, 2026
+**Raised By:** Mohammad (Infrastructure Engineer)
+**Change Type:** Normal
+**Priority:** Medium
+**Status:** Implemented & Verified
+
+### Change Summary
+Deployed the IIS web server role on WS2022-DC01, served a custom enterprise corporate
+intranet page, and hardened the server's TLS configuration (Schannel) to the Elite Standard
+by disabling legacy protocols and enforcing TLS 1.2.
+
+1. Installed the IIS (Web-Server) role with management tools via PowerShell.
+2. Replaced the default IIS page with a custom corporate intranet landing page in
+   C:\inetpub\wwwroot\index.html.
+3. Disabled SSL 2.0, SSL 3.0, TLS 1.0, TLS 1.1 (Server + Client) via Schannel registry keys.
+4. Explicitly enabled TLS 1.2 (Server + Client).
+
+### Risk Level
+**MEDIUM** — TLS protocol changes affect the entire OS (Schannel), not just IIS, and
+required a server reboot. Disabling legacy protocols could disconnect any client that only
+supports them.
+
+**Mitigating Factors:**
+- Isolated lab; all components support TLS 1.2+, so no legacy dependency exists.
+- Changes are registry-based, fully reversible, and were verified after reboot.
+- IIS install required no reboot; only the TLS hardening did.
+
+### Impact Analysis
+- **Systems Affected:** WS2022-DC01 (IIS role + OS-wide Schannel TLS configuration)
+- **Objects Created/Modified:** IIS Web-Server role installed; custom index.html deployed;
+  Schannel protocol registry keys set (SSL2/3, TLS1.0/1.1 disabled; TLS1.2 enabled)
+- **Downtime:** One planned reboot to apply Schannel changes
+- **Service Impact:** Web service now serves a hardened TLS protocol set. HTTPS binding
+  (certificate + port 443) deferred to Phase 2.8.
+- **Scope Note:** Because Schannel is OS-wide, the hardening also applies to other TLS
+  services on the host (e.g. RDP), improving overall security posture.
+
+### Implementation Steps
+1. Install-WindowsFeature -Name Web-Server -IncludeManagementTools; verified Installed.
+2. Confirmed W3SVC Running/Automatic, Default Web Site Started; HTTP request returned 200.
+3. Wrote custom index.html to wwwroot; verified custom page served (title "Infralab
+   Corporate Intranet", 200 OK).
+4. Set Schannel registry keys to disable weak protocols and enable TLS 1.2 (Server+Client).
+5. Rebooted; re-verified protocol state persisted (weak = DISABLED, TLS 1.2 = ENABLED).
+
+### Verification Evidence
+- HTTP 200 response and custom page title confirmed via Invoke-WebRequest.
+- Post-reboot registry read: SSL 2.0/3.0, TLS 1.0/1.1 = DISABLED; TLS 1.2 = ENABLED.
+- Screenshots: rendered corporate page; TLS state before and after hardening.
+
+### Rollback Plan
+- **IIS:** Uninstall-WindowsFeature -Name Web-Server (or stop W3SVC) to remove the web service.
+- **TLS:** Delete or revert the Schannel protocol registry keys under
+  ...\SecurityProviders\SCHANNEL\Protocols (restores OS-default protocol behaviour); reboot.
+- All changes reversible; no data loss risk.
+
+### Post-Implementation Review
+- **Outcome:** Functional corporate web service deployed and TLS hardened to Elite Standard.
+- **Key distinction noted:** Protocol hardening (Schannel) is separate from enabling HTTPS;
+  the HTTPS certificate + port 443 binding is scheduled for Phase 2.8, where an end-to-end
+  TLS handshake test will confirm the full secure-web-service chain.
+- **Closure:** Approved — Phase 2.4 complete; HTTPS binding tracked as a Phase 2.8 dependency.
 
 ---
