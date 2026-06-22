@@ -614,6 +614,81 @@ name and appears on the Organization tab. Approval workflows now route correctly
 | ADUC Organization tab | `Scenario 8 ADUC organization manager.png` |
 
 ---
+
+## Scenario 9: GPO Verification & Troubleshooting
+
+**Ticket Example:** *"I set up a Group Policy but the setting isn't applying — can you find out why?"*
+
+### Background
+A GPO can silently fail to apply for several subtle reasons. Diagnosis uses two tools:
+- **`gpupdate /force`** — forces an immediate re-pull and application of policy (instead of
+  waiting for the ~90-minute automatic refresh).
+- **`gpresult /r`** — the **Resultant Set of Policy** report: shows which GPOs *actually*
+  applied to a user/computer, and which were filtered out and why. (The GPO analogue of
+  `Get-ADUserResultantPasswordPolicy`.)
+
+### Troubleshooting checklist (in order)
+1. **Is the GPO linked and the link enabled?** An unlinked GPO does nothing.
+2. **Is it linked to the OU where the target object actually lives?** A GPO only applies to
+   objects in (or beneath) the linked OU.
+3. **User half vs computer half?** A user (`HKCU`) setting never applies to a computer
+   object; a computer (`HKLM`) setting never applies to a user. Check the version numbers.
+4. **Inheritance / blocking / Enforced?** A blocked or overridden link changes the outcome.
+5. **Has policy refreshed?** It may be correct but not yet pulled — `gpupdate /force`.
+
+### Resolution — PowerShell / CLI
+```powershell
+gpupdate /force                 # force immediate policy refresh
+gpresult /r /scope:computer     # show which computer GPOs actually applied (and why not)
+```
+
+### Worked Example (this environment)
+`gpresult` on WS2022-DC01 (which lives in the **Domain Controllers** OU) showed:
+
+**Applied Group Policy Objects:**
+- Default Domain Controllers Policy (linked to Domain Controllers OU)
+- Default Domain Policy (linked to domain root)
+- **Domain-Security-Audit-Baseline** (our GPO — linked to domain root, so it reaches the DC)
+
+**Not applied to this machine (correctly):**
+- `User-Workstation-Lock-Policy` — linked to **Departments** OU; the DC is not in Departments.
+- `Admin-Removable-Media-Restriction` — linked to **Devices** OU; the DC is not in Devices.
+
+**Diagnosis:** the two "missing" GPOs are **working as designed** — they are simply linked
+to OUs that do not contain this machine. This is the single most common real-world GPO
+finding: the policy is fine; it is scoped to an OU that does not contain the object being
+tested. The fix in a genuine case is to confirm the target object is in (or under) the
+correct OU, or adjust the link — not to "repair" the GPO.
+
+![gpresult output](Scenario%209%20gpresult.png)
+
+### Expected Outcome
+The analyst can state exactly which GPOs apply to a given object, which do not, and *why*
+— distinguishing a genuine fault (broken link, wrong configuration half, blocked
+inheritance) from correct-by-design non-application (object outside the linked OU's scope).
+
+### Common Mistakes
+- **Assuming "not applied" means "broken."** Most often the object is simply outside the
+  linked OU — working as designed.
+- **Testing a user policy against a computer object (or vice versa)** — the wrong half
+  never applies; check `HKCU` vs `HKLM` / the version numbers.
+- **Not refreshing first** — the policy may be correct but not yet pulled; `gpupdate /force`.
+- **Ignoring the "filtered out" section of gpresult** — it states the precise reason a GPO
+  did not apply (security filtering, WMI filter, empty, disabled link).
+
+### Escalation Path
+- GPO is correctly linked and scoped but still not applying after refresh → investigate
+  security filtering, WMI filters, or SYSVOL replication health → **Tier 2 / AD team**.
+- Conflicting policies producing an unexpected resultant set → review link order,
+  inheritance and Enforced flags across the OU hierarchy.
+
+### Evidence Captured
+| Evidence | File |
+|---|---|
+| gpresult resultant-policy report | `Scenario 9 gpresult.png` |
+
+---
+
 ## Scenario 10: Service Account Management
 
 **Ticket Example:** *"The backup job has stopped running — can you check the service account?"* or *"Please rotate the credentials on the monitoring service account."*
