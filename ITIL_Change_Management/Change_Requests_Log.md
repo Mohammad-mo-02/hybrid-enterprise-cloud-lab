@@ -17,6 +17,9 @@
 | CR-2026-0620-003 | 2026-06-20 | Phase 2.3B Prerequisites & Service Desk Runbook | Normal | Low | Implemented & Verified |
 | CR-2026-0622-004 | 2026-06-22 | Phase 2.3C Group Policy Object (GPO 1 of 3) | Normal | Low | Implemented & Verified  |
 | CR-2026-0622-005 | 2026-06-22 | Phase 2.4 IIS Web Service Deployment & TLS Hardening | Normal | Medium | Implemented & Verified |
+| CR-2026-0624-002 | 2026-06-24 | OneDrive Storage Exhaustion — VM Inaccessibility & Network Drift Remediation | Incident (Corrective) | Low | Implemented & Verified |
+| CR-2026-0625-003 | 2026-06-25 | Phase 2.6 SSH Hardening — ufw/sshd Port Mismatch Remediation | Normal (Security Hardening) + Incident (Corrective) | Medium | Implemented & Verified |
+
 ---
 
 ## CR-2026-0619-001
@@ -281,3 +284,123 @@ supports them.
 - **Closure:** Approved — Phase 2.4 complete; HTTPS binding tracked as a Phase 2.8 dependency.
 
 ---
+
+
+## CR-2026-0624-002
+
+**Title:** OneDrive Storage Exhaustion — VM Inaccessibility & Network Drift Remediation
+**Date Raised:** June 24, 2026
+**Raised By:** Mohammad (Infrastructure Engineer)
+**Change Type:** Incident (Corrective)
+**Priority:** Medium
+**Status:** Implemented & Verified
+
+### Change Summary
+
+VM library files (WS2022-DC01, LNX-SRV-01) became inaccessible after the host's personal OneDrive account (5GB tier) reached storage capacity while VM storage resided under a OneDrive-monitored Documents folder, causing `.vmdk`/`.vmx` files to sync incorrectly. Relocated all VM storage to a local, non-synced NTFS path. As a side effect of the relocation, DC01's network adapter reverted to DHCP and self-assigned an APIPA address (169.254.x.x), disconnecting it from the lab network — identified and corrected as part of the same remediation.
+
+### Risk Level
+
+**Overall: LOW**
+
+- Isolated host-only lab environment, no production impact
+- No live user-facing services affected
+- Relocation and IP correction are both reversible, low-complexity operations
+
+### Impact Analysis
+
+- **Systems Affected:** WS2022-DC01, LNX-SRV-01 (VM library entries and network configuration)
+- **Downtime:** Temporary inaccessibility of both VMs during diagnosis (~1 hour); no confirmed data loss
+- **Dependency Impact:** Blocked all subsequent Phase 2.5/2.6 work until resolved
+
+### Implementation Steps
+
+1. Diagnosed root cause via File Explorer storage audit and OneDrive sync status
+2. Relocated VM files from `Documents\Virtual Machines\` to local path `C:\Lab_Infrastructure\` (outside OneDrive sync scope)
+3. Removed stale `.lck` lock folders left over from non-clean shutdowns
+4. Verified VM integrity post-relocation via clean boot and `Get-ADDomain`
+5. Identified DC01's `Ethernet0` adapter had reverted to DHCP/APIPA following relocation
+6. Restored static IP via `Set-NetIPInterface -Dhcp Disabled` + `New-NetIPAddress` (10.0.0.10/24, gateway 10.0.0.1)
+7. Verified cross-VM connectivity (`ping 10.0.0.10` from LNX-SRV-01)
+
+### Verification / Test Evidence
+
+- `Get-ADDomain` returned full, internally consistent forest/domain details (no corruption)
+- `ipconfig /all` confirmed `10.0.0.10`, DHCP disabled, no APIPA address present
+- `ping -c 4 10.0.0.10` from LNX-SRV-01: 0% packet loss
+
+### Rollback Plan
+
+1. Revert VM storage path if local disk capacity becomes constrained (700GB available; low likelihood)
+2. Revert DC01 to DHCP via `Set-NetIPInterface -Dhcp Enabled` if static configuration causes unforeseen conflict on the isolated segment
+
+### Post-Implementation Review
+
+- **Root Cause:** Default VMware VM storage path sat inside a OneDrive-monitored Documents folder; live, frequently-written `.vmdk` files are unsuited to cloud-sync watch folders.
+- **Lesson Learned:** Relocating VM files can silently reset network adapter configuration to DHCP defaults — network config must be re-verified after any VM file relocation, not assumed to persist.
+- **Preventive Action:** VMware default VM location updated (Edit → Preferences → Workspace) to a permanent local path excluded from OneDrive sync.
+- **Closure:** Approved — both VMs confirmed healthy, network configuration restored and verified.
+
+---
+
+## CR-2026-0625-003
+
+**Title:** Phase 2.6 SSH Hardening — ufw/sshd Port Mismatch Remediation
+**Date Raised:** June 25, 2026
+**Raised By:** Mohammad (Infrastructure Engineer)
+**Change Type:** Normal (Security Hardening) + Incident (Corrective)
+**Priority:** High
+**Status:** Implemented & Verified
+
+### Change Summary
+
+Implemented SSH key-pair authentication on LNX-SRV-01, disabled root login and password authentication in `sshd_config`, and configured `ufw` firewall rules. During implementation, `ufw` was configured to allow port `2222` while `sshd` remained listening on port `22` — a partial, uncoordinated port migration that caused temporary loss of external SSH access despite the SSH service itself reporting healthy.
+
+### Risk Level
+
+**Overall: MEDIUM**
+
+- Change affects the sole remote-access path to the server
+- Console access remained available throughout as an out-of-band fallback, mitigating lockout risk
+- Original `sshd_config` backed up before any modification (`sshd_config.bak`)
+
+### Impact Analysis
+
+- **Systems Affected:** LNX-SRV-01 (SSH service, firewall configuration)
+- **Downtime:** Temporary loss of external (SSH) access; console access unaffected throughout
+- **User Impact:** None — single-operator lab environment
+- **Dependency Impact:** Positive once resolved — unblocks Phase 2.7–2.9 (Nginx, OpenSSL, DNS), all of which depend on stable SSH access for configuration
+
+### Implementation Steps
+
+1. Generated ED25519 key pair on management host (Windows)
+2. Deployed public key to `~/.ssh/authorized_keys` on LNX-SRV-01
+3. Verified key-based login succeeded before disabling password fallback
+4. Set `PermitRootLogin no` and `PasswordAuthentication no` in `sshd_config`
+5. Configured `ufw` — misconfiguration introduced at this step: only port `2222` allowed, while `sshd` remained on port `22`
+6. Diagnosed external SSH timeout via systematic elimination:
+   - `ping 10.0.0.20` succeeded → ruled out host-down/routing failure
+   - `systemctl status ssh` → service active, listening on port 22 → ruled out service failure
+   - `ufw status verbose` → only port 2222 permitted → root cause confirmed
+7. Applied `sudo ufw allow 22/tcp`
+8. Verified recovery via fresh SSH login (no password prompt)
+
+### Verification / Test Evidence
+
+- `systemctl status ssh` → `active (running)`, listening on port 22
+- `ufw status verbose` → `22/tcp ALLOW IN Anywhere` confirmed present
+- `grep -E "PermitRootLogin|PasswordAuthentication|^Port" sshd_config` → `Port 22`, `PermitRootLogin no`, `PasswordAuthentication no`
+- SSH login from management host succeeded with zero password prompt (key auth confirmed functional)
+
+### Rollback Plan
+
+1. Restore `/etc/ssh/sshd_config` from `sshd_config.bak` if hardened configuration causes unforeseen access issues
+2. `sudo ufw disable` as an emergency fallback if firewall misconfiguration recurs and blocks legitimate access
+3. Console access remains available as an out-of-band recovery path independent of SSH/firewall state
+
+### Post-Implementation Review
+
+- **Root Cause:** A firewall rule was added for a target port (2222) without the corresponding `sshd_config` port change being applied, leaving the two systems referencing different ports.
+- **Lesson Learned:** When changing any service's listening port, `sshd_config` and `ufw` must be updated and verified together — checking one in isolation can show a "healthy" result while the system as a whole is still broken.
+- **Preventive Action:** Verification step added to phase-completion checklist — confirm firewall rules and service configuration reference the same port before considering a port-related change complete.
+- **Closure:** Approved. Default port change (22 → custom) remains deferred as a separate, lower-priority follow-up; current configuration (key-only auth, root disabled) is fully secure independent of port number.
