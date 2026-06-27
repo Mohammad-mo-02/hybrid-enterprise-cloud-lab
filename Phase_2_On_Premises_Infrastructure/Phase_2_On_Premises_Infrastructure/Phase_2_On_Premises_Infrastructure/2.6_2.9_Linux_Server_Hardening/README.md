@@ -190,14 +190,10 @@ sudo systemctl reload nginx
 
 **Nginx configuration validation and HTTPS verification:**
 
-![Phase 2.8 Nginx HTTPS Verification](Phase%202.8%20Nginx%20HTTPS%20Verification.png)
+![Phase 2.8 Nginx HTTPS Verification](Nginx%20HTTPS%20Verification.png)
 
 *Shows `nginx -t` returning "syntax is ok" / "test is successful" prior to reload, followed by `ss -tlnp` confirming Nginx listening on both port 80 and port 443 after reload.*
 
 ## Outcome
 
 Nginx now serves both HTTP and HTTPS, with traffic on port 443 encrypted using a locally-trusted self-signed certificate. Configuration was validated before being applied live, and the result was confirmed at the network level rather than assumed from command success alone.
-
-## Phase 2.9: Local Name Resolution (DNS)
-
-*Pending.*
