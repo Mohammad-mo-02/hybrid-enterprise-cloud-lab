@@ -75,7 +75,92 @@ sudo grep -E "PermitRootLogin|PasswordAuthentication|^Port" /etc/ssh/sshd_config
 
 ## Phase 2.7: Linux Web Administration (Nginx)
 
-*Pending.*
+
+**Objective:** Stand up an active Nginx web environment, deepening package
+management (`apt`) and text-processing (`grep`, `sed`) fluency through direct
+configuration-file inspection and editing.
+
+### Implementation
+
+1. Confirmed internet connectivity prior to installation:
+   ```
+   ping -c 4 8.8.8.8
+   ```
+2. Updated package lists and installed Nginx:
+   ```
+   sudo apt update
+   sudo apt install nginx -y
+   ```
+3. Verified the service was active and enabled:
+   ```
+   sudo systemctl status nginx
+   ```
+
+**Verification — Nginx active and running, registered with `systemctl` and `ufw` automatically on install:**
+
+![Nginx service active](2.7-nginx-service-active.png)
+
+4. Opened the firewall for HTTP traffic using Nginx's auto-registered `ufw` application profile:
+   ```
+   sudo ufw allow 'Nginx HTTP'
+   sudo ufw status
+   ```
+
+**Verification — firewall rule confirmed (IPv4 + IPv6):**
+
+![ufw HTTP rule confirmed](2.7-ufw-http-allowed.png)
+
+5. Confirmed end-to-end functionality by requesting the page from the host browser at `http://10.0.0.20`.
+
+**Verification — default Nginx page served successfully to host browser:**
+
+![Nginx welcome page](2.7-nginx-welcome-page.png)
+
+### Configuration Review & Editing (Depth Work)
+
+Rather than leave the default configuration untouched, reviewed
+`/etc/nginx/sites-available/default` in full, then used `grep` to isolate the
+active directives from the surrounding template comments:
+
+```
+grep "listen" /etc/nginx/sites-available/default
+```
+
+This confirmed the server was listening on port 80 (IPv4 and IPv6), with the
+SSL (443) and example virtual-host blocks present only as commented-out
+templates — not active.
+
+**Made a real configuration change** — updated the generic `server_name _;`
+catch-all to explicitly identify the host:
+
+```
+sudo sed -i 's/server_name _;/server_name lnx-srv-01;/' /etc/nginx/sites-available/default
+```
+
+**Incident (minor): silent edit failure caught via verification, not assumed success.**
+The first `sed` attempt produced no error but also made no actual change —
+confirmed via a follow-up `grep` rather than trusting the absence of an error
+message. Re-ran the command and verified the change took effect on the second
+attempt.
+
+**Verification — `server_name` correctly updated, confirmed via grep (not assumed):**
+
+![server_name verified via grep](2.7-server-name-verified.png)
+
+Validated syntax before applying, then reloaded without dropping active connections:
+
+```
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+**Verification — syntax check passed, reload applied cleanly:**
+
+![nginx config test and reload](2.7-nginx-test-reload.png)
+
+### Outstanding
+- TLS/SSL configuration deferred to Phase 2.8 (OpenSSL certificate generation)
+- Reverse-proxy configuration (routing to Docker containers) deferred to Phase 3.4
 
 ## Phase 2.8: Cryptographic Certificate Lifecycle (OpenSSL)
 
