@@ -162,9 +162,41 @@ sudo systemctl reload nginx
 - TLS/SSL configuration deferred to Phase 2.8 (OpenSSL certificate generation)
 - Reverse-proxy configuration (routing to Docker containers) deferred to Phase 3.4
 
-## Phase 2.8: Cryptographic Certificate Lifecycle (OpenSSL)
+# Phase 2.8 — Cryptographic Certificate Lifecycle (OpenSSL/TLS on Nginx)
 
-*Pending.*
+**Objective:** Generate and deploy a self-signed TLS certificate to enable encrypted HTTPS on the Nginx web server, building foundational PKI and certificate-handling competency.
+
+## What Was Done
+
+- Generated a self-signed X.509 certificate and 2048-bit RSA private key using OpenSSL (`openssl req -x509 -newkey rsa:2048 -days 365`), with the Common Name set to `lnx-srv-01`
+- Locked down the private key to `600` permissions (root read/write only), enforcing least privilege — the certificate itself remains world-readable as `644`, since certificates are public by design and only the private key is sensitive
+- Appended a new `server {}` block to `/etc/nginx/sites-available/default`, configuring `listen 443 ssl;` and pointing `ssl_certificate` / `ssl_certificate_key` at the generated files
+- Validated the configuration with `nginx -t` **before** applying it live, then applied the change with `systemctl reload nginx` (zero-downtime reload, not a full restart)
+- Verified success at the network level using `ss -tlnp`, confirming Nginx listening on both `0.0.0.0:80` (HTTP) and `0.0.0.0:443` (HTTPS)
+
+## Why Self-Signed, Not a Public CA
+
+`lnx-srv-01` is an internal-only hostname on an isolated lab network — public Certificate Authorities like Let's Encrypt require internet-reachable domain validation, which doesn't apply here. Self-signed certificates are the correct and standard pattern for internal enterprise services, internal APIs, and lab/dev environments — this mirrors real production practice for internal-only endpoints, not a simplification of it.
+
+## Key Principle Demonstrated
+
+**Least privilege** — the private key is restricted to the one account (root) that the Nginx master process needs, with no broader access granted.
+
+## Evidence
+
+**OpenSSL certificate and key generation:**
+
+![Phase 2.8 OpenSSL Certificate Generation](Phase%202.8%20OpenSSL%20Certificate%20Generation.png)
+
+**Nginx configuration validation and HTTPS verification:**
+
+![Phase 2.8 Nginx HTTPS Verification](Phase%202.8%20Nginx%20HTTPS%20Verification.png)
+
+*Shows `nginx -t` returning "syntax is ok" / "test is successful" prior to reload, followed by `ss -tlnp` confirming Nginx listening on both port 80 and port 443 after reload.*
+
+## Outcome
+
+Nginx now serves both HTTP and HTTPS, with traffic on port 443 encrypted using a locally-trusted self-signed certificate. Configuration was validated before being applied live, and the result was confirmed at the network level rather than assumed from command success alone.
 
 ## Phase 2.9: Local Name Resolution (DNS)
 
