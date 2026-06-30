@@ -197,3 +197,59 @@ sudo systemctl reload nginx
 ## Outcome
 
 Nginx now serves both HTTP and HTTPS, with traffic on port 443 encrypted using a locally-trusted self-signed certificate. Configuration was validated before being applied live, and the result was confirmed at the network level rather than assumed from command success alone.
+# Phase 2.9 — Local Name Resolution & System Resource-Awareness
+
+**Objective:** Configure DNS forward and reverse lookup records on DC01 to enable name-based resolution for `LNX-SRV-01`, and build foundational Linux resource-awareness fluency (`ps`, `top`, `df`, `du`) to establish an honest health baseline before Phase 3 introduces Docker.
+
+## Part 1: DNS Forward and Reverse Resolution
+
+**What was done:**
+- Confirmed via `Get-DnsServerZone` that no reverse lookup zone existed yet for the `10.0.0.x` network — only default placeholder zones (`0`, `127`, `255.in-addr.arpa`) were present
+- Created a new Active Directory-integrated reverse lookup zone, `0.0.10.in-addr.arpa`, via DNS Manager's New Zone Wizard, matching the existing forward zone's replication and update settings
+- Created a Host (A) record (`lnx-srv-01` → `10.0.0.20`) in the existing `corp.infralab.local` forward zone, with "Create associated pointer (PTR) record" enabled to generate both records in a single action
+- Verified both records via `Get-DnsServerResourceRecord`, confirming exactly one A record existed with no duplication
+- Demonstrated the PowerShell equivalent (`Add-DnsServerResourceRecordA -CreatePtr`) — correctly returned an "already exists" error against the PTR record, confirmed as expected behaviour rather than a fault, since both records were already present from the GUI step
+- Verified actual end-to-end resolution (not just record presence) using `Resolve-DnsName` in both directions
+
+**Verification results:**
+- `Resolve-DnsName lnx-srv-01.corp.infralab.local` → correctly resolved to `10.0.0.20`
+- `Resolve-DnsName 10.0.0.20` → correctly resolved to `lnx-srv-01.corp.infralab.local`
+
+**Why this matters:** An IP address identifies a machine's current location on the network; a name identifies what the machine *is*, independent of where it currently sits. DNS is the layer that lets the rest of the environment depend on a stable name rather than a fragile, potentially-changing address. Forward (A) and reverse (PTR) records are maintained as structurally separate systems, not two views of one fact — which is why reverse zones require deliberate, explicit setup and don't appear automatically.
+
+**Evidence:**
+
+![Phase 2.9 DNS PTR Record Created](Phase%202.9%20DNS%20PTR%20Record%20Created.png)
+
+*The new `0.0.10.in-addr.arpa` reverse lookup zone, showing the PTR record for `10.0.0.20` correctly pointing back to `lnx-srv-01.corp.infralab.local`.*
+
+![Phase 2.9 DNS Resolution Verification](Phase%202.9%20DNS%20Resolution%20Verification.png)
+
+*`Resolve-DnsName` confirming functional, end-to-end resolution in both directions — not just record presence in the management console.*
+
+## Part 2: Linux Resource-Awareness Baseline
+
+**What was done:**
+- Used `ps aux | grep nginx` and `ps aux | grep sshd` to inspect running processes, observing the privilege-separation pattern in both services: a root-owned parent/listener process handling the minimum privileged operations (port binding, authentication), with actual work handed off to lower-privileged contexts (`www-data` for Nginx workers, the authenticated user's own session for SSH)
+- Used `top` to capture a live system health snapshot
+- Used `df -h` to check overall filesystem capacity
+- Used `sudo du -h --max-depth=1 /var | sort -rh | head -10` to identify what was consuming disk space within `/var`
+
+**Baseline results:**
+- Load average: `0.00, 0.00, 0.00` — system idle, no CPU contention
+- CPU: 99.8% idle
+- Memory: 3.35GB total, only 642MB actively used
+- Disk (`/`): 19GB total, 7.3GB used, 11GB free (42% utilisation)
+- `/var` breakdown: 610M total — largest contributors were `/var/cache` (359M, mostly apt package cache) and `/var/lib` (219M, installed package data); `/var/log` at a healthy 32M
+
+**Why this matters:** Phase 3 introduces Docker, which will have multiple containerised workloads competing for this machine's resources. Establishing a factual, evidence-based baseline now — rather than assuming the machine has headroom — means any future resource pressure introduced by containers can be measured against a known starting point, rather than guessed at.
+
+**Evidence:**
+
+![Phase 2.9 Resource Baseline Top](Phase%202.9%20Resource%20Baseline%20Top.png)
+
+*Live `top` snapshot confirming a healthy, mostly-idle system: load average 0.00 across all intervals, 99.8% CPU idle, and the majority of memory free or held in reclaimable cache.*
+
+## Outcome
+
+`LNX-SRV-01` is now resolvable by name in both directions via DNS, and confirmed to have substantial spare CPU, memory, and disk capacity ahead of Phase 3.
