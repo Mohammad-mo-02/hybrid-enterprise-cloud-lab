@@ -1,0 +1,38 @@
+# Phase 3.3 — Data Lifecycle Engineering (Volume Persistence)
+
+**Objective:** Verify that containerised application data persists across container restarts, demonstrating that the named volume mount correctly decouples application state from the container's own ephemeral lifecycle.
+
+## The Problem This Solves
+
+By default, any data written inside a running container exists only in that container's writable layer — a temporary, ephemeral space that is destroyed the moment the container is stopped or deleted. For a stateless application this is acceptable, but for any service that accumulates state over time (user accounts, configuration, logs, records), this default behaviour is operationally catastrophic: every restart would mean starting from zero.
+
+A **named volume** solves this by relocating persistent data to a specific, managed location on the host's own filesystem — outside the container's ephemeral layer entirely. The container reads and writes to this location during its lifetime, but the data itself lives on the host. When the container stops, restarts, or is deleted and recreated, the volume remains untouched on the host, ready for the next container instance to pick up exactly where the last one left off.
+
+## What Was Done
+
+- Confirmed the `portainer_data` named volume exists on the host via `docker volume ls` — created automatically when Portainer was first deployed in Phase 3.2 via the `-v portainer_data:/data` flag
+- Restarted the Portainer container via `docker restart portainer` — a deliberate, clean stop-and-start cycle to test data survival
+- Confirmed container returned to running state via `docker ps` — showing `Up 8 seconds`, ports correctly mapped, same container ID
+- Navigated to `https://10.0.0.20:9443` in browser immediately after restart — landed directly on the Portainer dashboard without being prompted for setup or re-authentication, confirming the admin account and all configuration survived the restart intact
+
+## Why This Matters
+
+The distinction between a container's ephemeral writable layer and a persistent volume is one of the most operationally critical concepts in container management. A container deployment without volume persistence is not production-ready — it is a liability that loses all accumulated state on every restart event. Demonstrating volume persistence is demonstrating that you understand the difference between deploying a container and deploying a container correctly.
+
+## Key Principle Demonstrated
+
+**Explicit-over-implicit** — the volume mount (`-v portainer_data:/data`) was a deliberate, explicitly declared choice in the original `docker run` command. Nothing about Docker's default behaviour would have persisted this data without that explicit declaration — silence means ephemeral, not persistent.
+
+## Evidence
+
+![Phase 3.3 Volume Persistence Docker PS](Phase%203.3%20Volume%20Persistence%20Docker%20PS.png)
+
+*`docker volume ls` confirming `portainer_data` exists on the host, followed by `docker restart portainer` and `docker ps` showing the container back `Up 8 seconds` with all port mappings intact after the restart cycle.*
+
+![Phase 3.3 Volume Persistence Dashboard After Restart](Phase%203.3%20Volume%20Persistence%20Dashboard%20After%20Restart.png)
+
+*Portainer dashboard loading immediately after restart — admin session intact, environment still connected and `Up`, timestamp `18:30:03` confirming this is the freshly restarted instance. No setup page, no lost configuration — volume persistence confirmed end-to-end.*
+
+## Outcome
+
+Named volume persistence verified: `portainer_data` correctly stores Portainer's application state on the host filesystem, completely independent of the container's own lifecycle. Data survived a full container restart with zero loss — the container is stateless, the data is not.
