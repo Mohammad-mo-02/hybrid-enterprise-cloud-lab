@@ -1,7 +1,5 @@
 # Phase 3 — Modern Microservices & Container Architectures
 
-**Status:** Phase 3.1 ✅ | Phase 3.2 ✅ | Phase 3.3 ✅ | Phase 3.4 🔄 | Phase 3.5 🔄
-
 ---
 
 ## Overview
@@ -118,7 +116,39 @@ A container deployment without volume persistence is not production-ready — it
 
 ## Phase 3.4 — Advanced Network Redirection (Nginx Reverse Proxy)
 
-*In progress*
+**Objective:** Reconfigure Nginx from a direct file server into a reverse proxy, routing all incoming HTTPS traffic through to the Portainer container — making Nginx the single controlled entry point and keeping the container itself off the public-facing network.
+
+### What Was Done
+
+- Rewrote `/etc/nginx/sites-available/default` with two clean server blocks:
+  - **Block 1 (Port 80):** Redirects all HTTP traffic to HTTPS via `return 301` — no plain-text connections accepted
+  - **Block 2 (Port 443):** Receives HTTPS traffic and proxies it internally to Portainer on `localhost:9443` via `proxy_pass`
+- Added required proxy headers (`Host`, `X-Real-IP`, `X-Forwarded-For`, `X-Forwarded-Proto`) so Portainer receives accurate client information through the proxy layer
+- Set `proxy_ssl_verify off` — instructs Nginx not to validate Portainer's self-signed certificate on the internal connection, since certificate trust is handled at the Nginx/client boundary, not internally
+- Added `Nginx HTTPS` rule to UFW firewall to allow port 443 traffic through
+- Validated config with `nginx -t` before applying — `syntax is ok / test is successful`
+- Reloaded Nginx via `sudo systemctl reload nginx`
+- Verified end-to-end: navigating to `https://10.0.0.20` (no port) loads Portainer dashboard directly through Nginx
+
+### Why This Matters
+
+Before this phase, Portainer was directly accessible on port 9443 — any client that could reach the machine could reach Portainer directly. After this phase, **Nginx is the only entry point**. Portainer's port is still mapped on the host, but all legitimate traffic flows through the hardened, TLS-terminating Nginx layer first. This is the same default-deny philosophy from Phase 2.6 applied at the application routing layer — one controlled, inspectable gateway, everything else behind it.
+
+### Key Principles Demonstrated
+
+- **Single controlled entry point** — Nginx acts as the sole gateway; containers are never directly exposed
+- **Explicit-over-implicit** — every proxy header, SSL setting, and redirect is deliberately declared
+- **Defence in depth** — TLS termination at Nginx + container isolation + host firewall = three independent layers
+
+### Evidence
+
+![Phase 3.4 Nginx Reverse Proxy Portainer](Phase%203.4%20Nginx%20Reverse%20Proxy%20Portainer.png)
+
+*Portainer dashboard loading at `https://10.0.0.20` with no port number — confirming Nginx is successfully proxying all traffic through to the Portainer container on port 9443.*
+
+### Outcome
+
+Nginx is now functioning as a hardened reverse proxy. All traffic enters through port 443, is TLS-terminated by Nginx, and is forwarded internally to Portainer. The container is no longer directly network-exposed. Phase 3.4 complete and verified end-to-end through a browser.
 
 ---
 
