@@ -152,6 +152,52 @@ Nginx is now functioning as a hardened reverse proxy. All traffic enters through
 
 ---
 
-## Phase 3.5 — Configuration Management Orchestration (Ansible)
+# Phase 3.5 — Configuration Management Orchestration (Ansible)
 
-*In progress*
+**Objective:** Shift from manual, imperative configuration to declarative, code-driven configuration management — encoding every hardening and deployment step from Phases 2.6 through 3.1 into a single, reusable Ansible playbook capable of rebuilding the environment's baseline automatically against any fresh machine.
+
+## The Philosophical Shift — Imperative vs Declarative
+
+Everything done manually across this project so far has been **imperative**: issue commands in sequence, the machine does what you tell it, in the order you tell it. This works for one machine but doesn't scale, doesn't self-correct, and doesn't recover from configuration drift.
+
+Ansible is **declarative**: instead of telling the machine what to do, you describe what the world should look like. Ansible determines what actions are needed to produce that state and only takes actions that are actually necessary. This produces **idempotency** — running the playbook ten times produces the same result every time, making no unnecessary changes if the desired state already exists.
+
+## What Was Done
+
+- Installed Ansible on `LNX-SRV-01` via `apt install ansible` — verified as `ansible core 2.20.1`
+- Created `/home/arsalanubuntu01/ansible/site.yml` — a declarative playbook encoding the full baseline:
+  - SSH hardening: `PasswordAuthentication no`, `PermitRootLogin no`
+  - UFW firewall: default deny incoming, explicit allow for SSH/HTTP/HTTPS
+  - Docker Engine: installed, running, enabled on boot, user added to docker group
+  - Nginx: installed, running, enabled on boot
+- Configured passwordless sudo for Ansible via `/etc/sudoers.d/ansible-nopasswd` — standard practice for Ansible managed nodes
+- Executed playbook against localhost: `ansible-playbook site.yml -i "localhost," -c local`
+- Executed playbook a second time to prove idempotency
+
+## Playbook Results
+
+**Run 1:** `ok=16 changed=4 failed=0` — Ansible enforced the desired state, making 4 necessary adjustments (SSH restart + 3 new UFW rules). All other components already in correct state.
+
+**Run 2:** `ok=16 changed=1 failed=0` — Only the deliberate SSH restart task triggered. All 15 other tasks confirmed already in desired state, no changes made. Idempotency proven.
+
+## Key Principles Demonstrated
+
+- **Idempotency** — the playbook produces the same result on every run, making no unnecessary changes when the desired state already exists
+- **Configuration drift elimination** — running this playbook against any machine that has diverged from baseline instantly restores it to the correct state
+- **Declarative over imperative** — the playbook describes what the machine should look like, not the sequence of actions to get there
+- **Infrastructure as Code** — the entire environment baseline is now version-controlled, auditable, and reproducible from a single file
+
+## Evidence
+
+![Phase 3.5 Ansible First Run](Phase%203.5%20Ansible%20First%20Run.png)
+
+*First playbook execution — `ok=16 changed=4 failed=0`. Ansible enforced the full baseline state across SSH hardening, UFW firewall rules, Docker, and Nginx.*
+
+![Phase 3.5 Ansible Idempotency Run](Phase%203.5%20Ansible%20Idempotency%20Run.png)
+
+*Second playbook execution — `ok=16 changed=1 failed=0`. Only the deliberate SSH restart triggered. All 15 remaining tasks confirmed already in desired state — idempotency demonstrated.*
+
+## Outcome
+
+The entire `LNX-SRV-01` environment baseline — SSH hardening, firewall policy, Docker installation, and Nginx deployment — is now encoded as a declarative, version-controlled Ansible playbook. Running `ansible-playbook site.yml` against any fresh Ubuntu machine reproduces the full hardened baseline automatically, with zero manual intervention. Configuration drift can be eliminated instantly by re-running the playbook at any time.
+
