@@ -135,3 +135,13 @@ This is the "Connect Sync" page under Microsoft Entra Connect, reached after cho
 
 Screenshot 14 – The actual download page, with the Connect Sync Agent button
 This is the "Manage your infrastructure" page, reached via Get Started > Manage tab, showing both download options side by side: "Download Provisioning agent" for Cloud Sync, and "Download Connect Sync Agent" for Connect Sync. The bottom button — Download Connect Sync Agent — is the one actually used, consistent with the earlier decision to use Connect Sync rather than Cloud Sync. This is the literal point where the installer file was pulled down, marking the end of the "locate and download" work and the handoff to actually getting the installer onto DC01 and running it.
+
+Microsoft Entra Connect Sync installed and configured on DC01 with Password Hash Synchronization. Domain/OU filtering scoped to exclude the Tier0-Admins OU. A second, independent protection layer was verified via Full Synchronization Preview against the built-in Administrator account: Microsoft Entra Connect's default synchronization rules block projection of any object with `isCriticalSystemObject=true`, regardless of OU. Staging mode was used to validate this before going live. Staging mode was then disabled, triggering the real export, confirmed below.
+
+### Post-sync verification: users landed in Entra ID
+
+![Users synced to Entra ID](./entra-users-post-sync-264-users.png)
+
+The Entra admin center's Users blade shows 264 users present after the real sync, all with "On-premises sync" = Yes and identities mapped to the fallback UPN domain — confirming the Departments OU population synced correctly. No Administrator, Domain Admins, or other Tier 0 privileged accounts appear in this list, matching the exclusion verified earlier at the sync-engine level. Both protection layers held: the deliberate OU filter and Microsoft's built-in critical-object protection.
+
+**Elite Standard extensions (pending, follow-up session):** Zero Trust Conditional Access policies, sign-in log investigation, Service Desk Simulator (license provisioning, shared mailbox delegation).
