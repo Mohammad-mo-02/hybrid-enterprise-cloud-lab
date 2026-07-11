@@ -166,11 +166,11 @@ Three Conditional Access policies were built and deployed in **Report-only** mod
 
 All three policies are visible together on the Conditional Access Policies list (3 out of 3 policies found), confirming the full pilot rollout.
 
-![CA01 policy details - phishing-resistant MFA, report-only](Screenshot%202026-07-11%20183235.png)
+![CA01 policy details - phishing-resistant MFA, report-only](CA01-policy-details.png)
 
-![CA02 policy details - block noncompliant devices, report-only](Screenshot%202026-07-11%20183324.png)
+![CA02 policy details - block noncompliant devices, report-only](CA02-policy-details.png)
 
-![CA03 policy details - block access outside UK, report-only](Screenshot%202026-07-11%20183813.png)
+![CA03 policy details - block access outside UK, report-only](CA03-policy-details.png)
 
 ---
 
@@ -180,9 +180,6 @@ A genuine authentication failure was investigated as part of this phase, arising
 
 Checking the same event's **Report-only** tab (used to preview what the three Conditional Access policies built in this phase would do, without enforcing them) returned "Not applicable." This surfaced an important architectural point: Conditional Access evaluates *after* a credential is successfully verified — it is a post-authentication gate, not a pre-authentication filter. A failed password never reaches CA policy evaluation at all, regardless of how the policies are configured.
 
-![Sign-in failure detail - error 50126](Screenshot%202026-07-11%20183822.png)
+![Sign-in failure detail - error 50126](signin-error-50126.png)
 
-![Report-only tab showing Not applicable on failed auth](Screenshot%202026-07-11%20183830.png)
-
-![Pilot license assignment - 3 of 25 licenses assigned](e5-pilot-licenses-3-of-25.png)
-
+![Report-only tab showing Not applicable on failed auth](signin-report-only-tab.png)
