@@ -156,4 +156,32 @@ Rather than license the full 264-user synced directory, licensing was deliberate
 
 ![Pilot license assignment - 3 of 25 licenses assigned](e5-pilot-licenses-3-of-25.png)
 
+## Conditional Access — Zero Trust Policy Build
 
+Three Conditional Access policies were built and deployed in **Report-only** mode against the 3-user pilot group, keeping the Global Admin account permanently excluded as a break-glass account — guaranteeing administrative access can never be locked out by a misconfigured policy, regardless of what the policies below do.
+
+**CA01 — Require Phishing-Resistant MFA.** Applies a *grant control*: users must authenticate with a phishing-resistant method (FIDO2 / Microsoft Authenticator passkey) before being let in. This is conditional, not a hard block — satisfy the requirement and access proceeds.
+
+**CA02 — Block Noncompliant Devices.** Requires the signing-in device to be marked compliant via Intune. Since Intune enrolment happens later in Phase 4.3, no devices currently qualify as compliant — meaning this policy, if switched live today, would block every sign-in outright. Report-only mode makes this safe to build now and verify later once compliant devices actually exist, rather than waiting to build it until Phase 4.3 is reached.
+
+**CA03 — Block Access Outside the UK.** Uses a hard **Block access** grant control (not a conditional MFA challenge) scoped to a custom Named Location for the United Kingdom, with all other countries excluded from the "allowed" range. Unlike CA01, there is no way to satisfy this policy from outside the UK — it is an outright refusal, not an extra verification step.
+
+All three policies are visible together on the Conditional Access Policies list (3 out of 3 policies found), confirming the full pilot rollout.
+
+![CA01 policy details - phishing-resistant MFA, report-only](Screenshot 2026-07-11 183235.png)
+
+![CA02 policy details - block noncompliant devices, report-only](Screenshot 2026-07-11 183324.png)
+
+![CA03 policy details - block access outside UK, report-only](Screenshot 2026-07-11 183813.png)
+
+---
+
+## Entra Sign-in Log Investigation
+
+A genuine authentication failure was investigated as part of this phase, arising naturally from a password reset test on the Abigail James pilot account. The Sign-in Logs entry showed **Sign-in error code 50126** — "Error validating credentials due to invalid username or password" — confirming the failure was a straightforward credential mismatch, not a synchronization or configuration fault.
+
+Checking the same event's **Report-only** tab (used to preview what the three Conditional Access policies built in this phase would do, without enforcing them) returned "Not applicable." This surfaced an important architectural point: Conditional Access evaluates *after* a credential is successfully verified — it is a post-authentication gate, not a pre-authentication filter. A failed password never reaches CA policy evaluation at all, regardless of how the policies are configured.
+
+![Sign-in failure detail - error 50126](Screenshot 2026-07-11 183822.png)
+
+![Report-only tab showing Not applicable on failed auth](Screenshot 2026-07-11 183830.png)
