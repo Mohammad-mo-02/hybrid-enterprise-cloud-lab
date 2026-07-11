@@ -144,4 +144,16 @@ Microsoft Entra Connect Sync installed and configured on DC01 with Password Hash
 
 The Entra admin center's Users blade shows 264 users present after the real sync, all with "On-premises sync" = Yes and identities mapped to the fallback UPN domain — confirming the Departments OU population synced correctly. No Administrator, Domain Admins, or other Tier 0 privileged accounts appear in this list, matching the exclusion verified earlier at the sync-engine level. Both protection layers held: the deliberate OU filter and Microsoft's built-in critical-object protection.
 
-**Elite Standard extensions (pending, follow-up session):** Zero Trust Conditional Access policies, sign-in log investigation, Service Desk Simulator (license provisioning, shared mailbox delegation).
+## Microsoft 365 E5 Trial Activation & Pilot License Assignment
+
+Conditional Access, Intune, and the Service Desk Simulator all require Entra ID P2 and Exchange Online — features not included in the free Entra ID tier this tenant was originally provisioned with. A Microsoft 365 E5 trial (30 days, 25 licenses) was activated on the existing tenant to unlock these features without disrupting the Entra Connect sync already established in the previous section.
+
+Rather than license the full 264-user synced directory, licensing was deliberately scoped to a 3-user pilot group — a common enterprise practice for staged premium license rollout. Each pilot user required a **Usage location** set (a legal/export requirement tied to license assignment) before the license itself could apply. The tenant's Global Admin account was intentionally left unlicensed and out of scope for all Conditional Access policies built in this phase — reserved as a break-glass account to guarantee administrative access is never blocked by a misconfigured policy.
+
+**Pilot licensed users:** Abigail James, Abigail Nesbitt, Abigail Ogle
+
+![E5 trial order confirmation](e5-trial-order-confirmation.png)
+
+![Pilot license assignment - 3 of 25 licenses assigned](e5-pilot-licenses-3-of-25.png)
+
+
