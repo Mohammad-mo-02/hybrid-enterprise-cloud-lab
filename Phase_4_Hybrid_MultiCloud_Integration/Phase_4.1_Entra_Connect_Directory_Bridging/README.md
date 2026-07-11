@@ -154,8 +154,6 @@ Rather than license the full 264-user synced directory, licensing was deliberate
 
 ![E5 trial order confirmation](e5-trial-order-confirmation.png)
 
-![Pilot license assignment - 3 of 25 licenses assigned](e5-pilot-licenses-3-of-25.png)
-
 ## Conditional Access — Zero Trust Policy Build
 
 Three Conditional Access policies were built and deployed in **Report-only** mode against the 3-user pilot group, keeping the Global Admin account permanently excluded as a break-glass account — guaranteeing administrative access can never be locked out by a misconfigured policy, regardless of what the policies below do.
@@ -168,11 +166,11 @@ Three Conditional Access policies were built and deployed in **Report-only** mod
 
 All three policies are visible together on the Conditional Access Policies list (3 out of 3 policies found), confirming the full pilot rollout.
 
-![CA01 policy details - phishing-resistant MFA, report-only](Screenshot 2026-07-11 183235.png)
+![CA01 policy details - phishing-resistant MFA, report-only](Screenshot%202026-07-11%20183235.png)
 
-![CA02 policy details - block noncompliant devices, report-only](Screenshot 2026-07-11 183324.png)
+![CA02 policy details - block noncompliant devices, report-only](Screenshot%202026-07-11%20183324.png)
 
-![CA03 policy details - block access outside UK, report-only](Screenshot 2026-07-11 183813.png)
+![CA03 policy details - block access outside UK, report-only](Screenshot%202026-07-11%20183813.png)
 
 ---
 
@@ -182,6 +180,9 @@ A genuine authentication failure was investigated as part of this phase, arising
 
 Checking the same event's **Report-only** tab (used to preview what the three Conditional Access policies built in this phase would do, without enforcing them) returned "Not applicable." This surfaced an important architectural point: Conditional Access evaluates *after* a credential is successfully verified — it is a post-authentication gate, not a pre-authentication filter. A failed password never reaches CA policy evaluation at all, regardless of how the policies are configured.
 
-![Sign-in failure detail - error 50126](Screenshot 2026-07-11 183822.png)
+![Sign-in failure detail - error 50126](Screenshot%202026-07-11%20183822.png)
 
-![Report-only tab showing Not applicable on failed auth](Screenshot 2026-07-11 183830.png)
+![Report-only tab showing Not applicable on failed auth](Screenshot%202026-07-11%20183830.png)
+
+![Pilot license assignment - 3 of 25 licenses assigned](e5-pilot-licenses-3-of-25.png)
+
