@@ -183,3 +183,11 @@ Checking the same event's **Report-only** tab (used to preview what the three Co
 ![Sign-in failure detail - error 50126](signin-error-50126.png)
 
 ![Report-only tab showing Not applicable on failed auth](signin-report-only-tab.png)
+
+## Service Desk Simulator — Shared Mailbox with Delegated Permissions
+
+A Shared Mailbox (`itservicedesk@...`) was created to simulate a common enterprise service desk scenario: a team inbox accessible to multiple staff without each person needing a separate license or mailbox. Both pilot users (Abigail James, Abigail Ogle) were granted **Full Access** (read/manage the mailbox directly) and **Send as** (send mail appearing to come from the shared address) — the two delegated permission types needed for a functioning shared team inbox, rather than mailbox ownership being tied to one individual.
+
+Combined with the pilot license provisioning and the sign-in log investigation documented earlier in this phase, this closes out all three components of the Service Desk Simulator required for Phase 4.1's Elite Standard: license provisioning, Shared Mailbox with delegated permissions, and identity troubleshooting via sign-in logs.
+
+![Shared mailbox with delegated permissions - Full Access and Send As for 2 users](shared-mailbox-delegated-permissions.png)
