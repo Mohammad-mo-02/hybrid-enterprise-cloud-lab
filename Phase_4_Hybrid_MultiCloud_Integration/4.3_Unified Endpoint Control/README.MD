@@ -27,7 +27,7 @@ Switch + GPO = automatic enrolment "without manual intervention," exactly as the
 
 In **Entra → Mobility (MDM and MAM) → Microsoft Intune**, set **MDM user scope = All** so any licensed user's Windows device can auto-enrol (only the E5-licensed pilot users can actually enrol, since enrolment consumes an Intune licence). Default MDM Terms of Use / Discovery / Compliance URLs retained; MAM/WIP scope left None.
 
-![MDM user scope set to All in Entra](01-intune-mdm-user-scope.png)
+![MDM user scope set to All in Entra](intune-mdm-user-scope.png)
 *Evidence 1 — Intune set as MDM authority with auto-enrolment scope = All.*
 
 ### 2.2 Device instruction — auto-enrolment Group Policy
@@ -36,7 +36,7 @@ Created a **Workstations** OU and moved `WIN11-CLIENT01` into it (keeps the poli
 
 **Computer Configuration → Administrative Templates → Windows Components → MDM → "Enable automatic MDM enrollment using default Azure AD credentials" = Enabled.**
 
-![Auto-enrollment GPO enabled and linked to Workstations OU](02-intune-autoenroll-gpo.png)
+![Auto-enrollment GPO enabled and linked to Workstations OU](intune-autoenroll-gpo.png)
 *Evidence 2 — auto-enrolment GPO enabled and scoped to the Workstations OU.*
 
 **Design note — targeting (principle: least scope / blast radius).** The GPO is linked to a dedicated Workstations OU rather than the domain root, so it applies only to client machines and can never pull the domain controller into MDM. The device was moved into that OU for the policy to reach it (GPOs link to OUs, not the default `Computers` container).
@@ -66,4 +66,4 @@ To be completed and evidenced next (tenant-side, no device required to author):
 
 ---
 
-*Environment: WIN11-CLIENT01 (Windows 11 Enterprise, hybrid joined) · DC01 (WS2022) · Entra tenant df8403b0-4503-4df0-9f25-40f6c0d0a932 · M365 E5 trial (expires 2026-08-10). Screenshot filenames are placeholders — match to your captures.*
+*Environment: WIN11-CLIENT01 (Windows 11 Enterprise, hybrid joined) · DC01 (WS2022) · Entra tenant df8403b0-4503-4df0-9f25-40f6c0d0a932 · M365 E5 trial (expires 2026-08-10).*
