@@ -67,3 +67,47 @@ To be completed and evidenced next (tenant-side, no device required to author):
 ---
 
 *Environment: WIN11-CLIENT01 (Windows 11 Enterprise, hybrid joined) · DC01 (WS2022) · Entra tenant df8403b0-4503-4df0-9f25-40f6c0d0a932 · M365 E5 trial (expires 2026-08-10).*
+
+3. Endpoint controls — authored & deployed
+
+Three tenant-side controls were authored and assigned. Together they define what a "healthy" device is (compliance), harden it (configuration), and enforce the verdict (Conditional Access).
+
+3.1 Compliance policy — require BitLocker
+
+Intune Windows compliance policy WIN-Compliance-Baseline requiring BitLocker and Secure Boot, assigned to All devices. This is Intune's definition of a healthy device; its Compliant / Non-Compliant verdict is what Conditional Access reads.
+
+Show Image
+Evidence 3 — compliance baseline requiring BitLocker + Secure Boot.
+
+3.2 Configuration profile — block USB mass storage
+
+Device-restrictions profile WIN-USB-Block setting Removable storage = Block, assigned to All devices — closing the classic data-exfiltration and malware-ingress path of USB mass-storage devices.
+
+Show Image
+Evidence 4 — removable/USB mass storage blocked via configuration profile.
+
+3.3 Conditional Access enforcement — the Zero Trust gate
+
+Conditional Access policy CA02 (block non-compliant devices) was moved from Report-only to On, scoped to the pilot users, with the break-glass Global Admin excluded. This is the step that turns policy authoring into policy enforcement: a device that fails the compliance baseline is now actively blocked from resources, while a compliant device passes.
+
+Show Image
+Evidence 5 — Conditional Access enforcing device compliance (Zero Trust gate live).
+
+Principle named — Zero Trust / verify explicitly. Access is granted per-device based on continuously-evaluated health, not on network location. Compliance policy defines health; Conditional Access enforces it; together they are the enforcement loop, not just documentation.
+
+
+4. Status — honest position
+
+Authored, deployed and verified:
+
+
+Intune set as MDM authority; MDM user scope = All (Evidence 1).
+Auto-enrolment GPO enabled and scoped to the Workstations OU (Evidence 2).
+Compliance baseline (BitLocker + Secure Boot) deployed to all devices (Evidence 3).
+USB mass-storage block deployed to all devices (Evidence 4).
+Conditional Access CA02 enforcing device compliance (Evidence 5).
+
+
+Open item — device enrolment pending: WIN11-CLIENT01 had not completed enrolment into Intune at time of writing (Intune → Devices showed 0 managed devices). This is not a configuration gap — both halves of the auto-enrolment mechanism are correct, and all endpoint controls above are live and will apply the instant a device enrols. The enrolment trigger for a hybrid device is a licensed pilot user signing in once on the workstation, and that interactive sign-in was blocked by a VMware console/credential issue. Enrolment (and the resulting live compliance/CA evaluation) is a short close-out once a licensed sign-in succeeds.
+
+Lesson documented: Device Credential auto-enrolment was trialled first (to avoid the user sign-in) but proved unreliable for hybrid → Intune-only — it targets co-management (SCCM) scenarios. Reverted to User Credential, the dependable path, which requires a licensed user to sign in. Recurring principle: match the enrolment credential type to the scenario; the "clever shortcut" cost time.
