@@ -36,7 +36,7 @@ Created a **Workstations** OU and moved `WIN11-CLIENT01` into it (keeps the poli
 
 **Computer Configuration → Administrative Templates → Windows Components → MDM → "Enable automatic MDM enrollment using default Azure AD credentials" = Enabled.**
 
-![Auto-enrollment GPO enabled and linked to Workstations OU](intune-autoenroll-gpo.png)
+![Auto-enrollment GPO enabled and linked to Workstations OU](02-intune-autoenroll-gpo.png)
 *Evidence 2 — auto-enrolment GPO enabled and scoped to the Workstations OU.*
 
 **Design note — targeting (principle: least scope / blast radius).** The GPO is linked to a dedicated Workstations OU rather than the domain root, so it applies only to client machines and can never pull the domain controller into MDM. The device was moved into that OU for the policy to reach it (GPOs link to OUs, not the default `Computers` container).
