@@ -19,7 +19,7 @@
 | CR-2026-0622-005 | 2026-06-22 | Phase 2.4 IIS Web Service Deployment & TLS Hardening | Normal | Medium | Implemented & Verified |
 | CR-2026-0624-002 | 2026-06-24 | OneDrive Storage Exhaustion — VM Inaccessibility & Network Drift Remediation | Incident (Corrective) | Low | Implemented & Verified |
 | CR-2026-0625-003 | 2026-06-25 | Phase 2.6 SSH Hardening — ufw/sshd Port Mismatch Remediation | Normal (Security Hardening) + Incident (Corrective) | Medium | Implemented & Verified |
-
+| CR-2026-0713-006 | 2026-07-13 | Phase 4.2 — Hybrid Workstation Provisioning & Entra Hybrid Join (SCP) Configuration | Normal | Medium | Implemented & Verified |
 ---
 
 ## CR-2026-0619-001
@@ -404,3 +404,72 @@ Implemented SSH key-pair authentication on LNX-SRV-01, disabled root login and p
 - **Lesson Learned:** When changing any service's listening port, `sshd_config` and `ufw` must be updated and verified together — checking one in isolation can show a "healthy" result while the system as a whole is still broken.
 - **Preventive Action:** Verification step added to phase-completion checklist — confirm firewall rules and service configuration reference the same port before considering a port-related change complete.
 - **Closure:** Approved. Default port change (22 → custom) remains deferred as a separate, lower-priority follow-up; current configuration (key-only auth, root disabled) is fully secure independent of port number.
+
+## CR-2026-0713-006
+
+**Title:** Phase 4.2 — Hybrid Workstation Provisioning & Entra Hybrid Join (SCP) Configuration
+**Date Raised:** July 13, 2026
+**Raised By:** Mohammad (Infrastructure Engineer)
+**Change Type:** Normal
+**Priority:** Medium
+**Status:** Implemented & Verified
+
+### Change Summary
+
+Provisioned the first domain client (WIN11-CLIENT01) and established Microsoft Entra hybrid join. Two linked changes:
+
+1. **Prerequisite remediation (SCP):** Configured the Service Connection Point via Microsoft Entra Connect *device options* on WS2022-DC01. The SCP was absent following Phase 4.1, which delivered user synchronisation (Password Hash Sync) only. The SCP writes `azureADId` and `azureADName` into the forest Configuration partition so that domain-joined devices can discover the tenant and self-register into Entra ID.
+2. **Workstation provisioning:** Built a Windows 11 Enterprise workstation (UEFI + Secure Boot + virtual TPM 2.0), dual-homed (VMnet1 host-only static `10.0.0.30`; VMnet8 NAT for Entra egress), joined it to `corp.infralab.local`, renamed it `DESKTOP-JTKH3DR` → `WIN11-CLIENT01` before cloud registration finalised, and confirmed it as **Microsoft Entra hybrid joined**.
+
+### Risk Level
+
+**Overall: MEDIUM**
+
+- The SCP write targets the forest-wide Configuration partition (replicates to all domain controllers).
+
+**Mitigating Factors:**
+- The SCP is an additive discovery object — it does not alter authentication, existing users, GPO/FGPP, or the on-prem trust model. Removing it does not affect domain logon.
+- Isolated host-only lab; no production users. Pilot licensing scoped to 3 test users; break-glass Global Admin excluded from all Conditional Access policies.
+- Device registration consumes no M365 E5 licences.
+
+### Impact Analysis
+
+- **Systems Affected:** WS2022-DC01 (AD forest Configuration partition + Entra Connect), Microsoft Entra tenant `df8403b0-4503-4df0-9f25-40f6c0d0a932`, new endpoint WIN11-CLIENT01
+- **Objects Created:** 1 SCP object (`CN=Device Registration Configuration`); 1 AD computer object (WIN11-CLIENT01); 1 Entra device object (WIN11-CLIENT01$, join type "hybrid joined")
+- **Downtime:** None
+- **User Impact:** None (lab environment)
+- **Dependency Impact:** Positive — satisfies the Phase 4.3 prerequisite that the endpoint exist as a device object in Entra ID for Intune enrolment and compliance evaluation
+
+### Implementation Steps
+
+1. Ran Entra Connect → *Configure device options → Configure Microsoft Entra hybrid join* (forest `corp.infralab.local`, authentication service **Azure Active Directory** — managed domain, no ADFS, Enterprise Admin credentials); SCP written to the forest Configuration partition.
+2. Verified the SCP via `$scp.Keywords` — returned `azureADName` and `azureADId`.
+3. Built WIN11-CLIENT01 in VMware Workstation Pro (UEFI + Secure Boot; virtual TPM 2.0 via VM encryption; 2 vCPU / 4 GB / 64 GB), stored at `C:\Lab_Infrastructure\` (excluded from OneDrive per CR-2026-0624-002); dual NIC (VMnet1 host-only + VMnet8 NAT).
+4. Set host-only NIC static `10.0.0.30/24`, DNS `10.0.0.10`, **no default gateway**; NAT NIC left on DHCP for controlled internet egress to Entra endpoints.
+5. Joined to `corp.infralab.local`; renamed to WIN11-CLIENT01 via `Rename-Computer` before cloud registration finalised.
+6. Confirmed hybrid join via `dsregcmd /status` (device) and the Entra admin centre (cloud).
+
+### Verification / Test Evidence
+
+- `$scp.Keywords` → `azureADName:arsalansomersetgmail.onmicrosoft.com`, `azureADId:df8403b0-4503-4df0-9f25-40f6c0d0a932`
+- `dsregcmd /status` → `AzureAdJoined: YES`, `DomainJoined: YES`, `DeviceAuthStatus: SUCCESS`, `TpmProtected: YES`, `DeviceId: 671bc650-df07-464c-81de-c3779077cdf5`, `TenantId` matches the SCP
+- Entra admin centre → Devices → WIN11-CLIENT01 = "Microsoft Entra hybrid joined", Enabled
+- Screenshots: `01-scp-keywords`, `02-dsregcmd-status`, `03-entra-hybrid-device`
+- **Outstanding:** user-side Primary Refresh Token (`AzureAdPrt: YES`) deferred — to be confirmed on next pilot-user logon and exercised naturally in Phase 4.3 (non-blocking)
+
+### Rollback Plan
+
+1. **Workstation:** power off / delete the WIN11-CLIENT01 VM; `Remove-ADComputer WIN11-CLIENT01`; delete the Entra device object (Devices → Delete). No dependent systems reference it.
+2. **SCP (only if required):** delete the SCP object at `CN=62a0ff2e-97b9-4513-943f-0d221bd30080,CN=Device Registration Configuration,CN=Services,CN=Configuration,DC=corp,DC=infralab,DC=local`. Devices revert to domain-joined-only; no impact on user authentication or existing services.
+3. Confirm forest health post-rollback (`dcdiag`, `repadmin /replsummary`). AD Recycle Bin enabled for object recovery.
+
+**Rollback risk:** Low — both changes are additive and independently reversible.
+
+### Post-Implementation Review
+
+- **Root Cause (prerequisite gap):** Phase 4.1 configured user synchronisation but not the Entra Connect *device options* step, so the SCP was never written. Without it, a device domain-joins successfully yet never registers into Entra — a silent failure that would only surface in Phase 4.3.
+- **Lesson Learned:** Hybrid join has a hidden dependency (the SCP) that user-sync setup does not satisfy. Verify the SCP exists *before* provisioning any endpoint.
+- **Preventive Action:** Added an SCP existence check (`$scp.Keywords`) to the pre-flight for any endpoint-provisioning phase.
+- **Closure:** Approved — Phase 4.2 core complete; device hybrid join verified on-device and in the Entra portal. Pilot-user PRT verification deferred to a short follow-up / Phase 4.3. Unblocks Phase 4.3 (Intune enrolment + device compliance).
+
+---
