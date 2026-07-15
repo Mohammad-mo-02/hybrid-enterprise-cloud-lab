@@ -474,84 +474,72 @@ Provisioned the first domain client (WIN11-CLIENT01) and established Microsoft E
 - **Closure:** Approved — Phase 4.2 core complete; device hybrid join verified on-device and in the Entra portal. Pilot-user PRT verification deferred to a short follow-up / Phase 4.3. Unblocks Phase 4.3 (Intune enrolment + device compliance).
 
 
-CR-2026-0714-008
+## CR-2026-0714-008
 
-Title: Phase 4.4 — Azure Virtual Desktop Framework Deployment (Entra-joined)
-Date Raised: July 15, 2026
-Raised By: Mohammad (Infrastructure Engineer)
-Change Type: Normal
-Priority: Low
-Status: Implemented — session host deployment pending (free-trial quota)
+**Title:** Phase 4.4 — Azure Virtual Desktop Framework Deployment (Entra-joined)
+**Date Raised:** July 15, 2026
+**Raised By:** Mohammad (Infrastructure Engineer)
+**Change Type:** Normal
+**Priority:** Low
+**Status:** Implemented — session host deployment pending (free-trial quota)
 
-Change Summary
+### Change Summary
 
 Provisioned the Azure Virtual Desktop framework to deliver a cloud-hosted, Entra-identity-mapped Windows desktop:
 
+1. **Created a new Azure subscription** (free trial, £200 credit) — the compute plane, in the same Entra directory as the M365 E5 tenant so hybrid-synced identities flow through.
+2. **Deployed the AVD framework** in resource group `rg-avd-lab` (UK West): virtual network `vnet-avd-lab`, host pool `hp-avd-lab` (Pooled / Desktop), application group `hp-avd-lab-DAG`, and workspace `ws-avd-lab`. Session hosts configured for **Microsoft Entra ID** join (maps directly to the hybrid-synced directory; no on-prem VPN required).
+3. **Session-host VM did not deploy** — blocked at preflight by a free-trial vCPU quota of 0 (DASv5 family, UK West). Framework resources deployed successfully; the VM alone failed.
 
-Created a new Azure subscription (free trial, £200 credit) — the compute plane, in the same Entra directory as the M365 E5 tenant so hybrid-synced identities flow through.
-Deployed the AVD framework in resource group rg-avd-lab (UK West): virtual network vnet-avd-lab, host pool hp-avd-lab (Pooled / Desktop), application group hp-avd-lab-DAG, and workspace ws-avd-lab. Session hosts configured for Microsoft Entra ID join (maps directly to the hybrid-synced directory; no on-prem VPN required).
-Session-host VM did not deploy — blocked at preflight by a free-trial vCPU quota of 0 (DASv5 family, UK West). Framework resources deployed successfully; the VM alone failed.
+### Risk Level
 
+**Overall: LOW**
 
-Risk Level
+- Isolated lab; no production impact.
+- No running compute — the session-host VM never created, so **no charges are accruing**. Host pool, workspace, and app group are free control-plane objects.
+- All resources are additive and contained in a single resource group (one-click cleanup).
 
-Overall: LOW
+### Impact Analysis
 
+- **Systems Affected:** new Azure subscription; resource group `rg-avd-lab` (UK West); Entra tenant `df8403b0-4503-4df0-9f25-40f6c0d0a932` (identity mapping)
+- **Objects Created:** 1 subscription, 1 VNet, 1 host pool, 1 application group, 1 workspace
+- **Objects Failed:** 1 session-host VM (`avd-sh-0`) — preflight quota block
+- **Downtime:** None
+- **Cost Impact:** £0 currently (no compute running; control-plane objects are free)
+- **Dependency Impact:** None downstream — AVD is a leaf; Phase 5 and the AWS phases (4.5–4.7) do not depend on it
 
-Isolated lab; no production impact.
-No running compute — the session-host VM never created, so no charges are accruing. Host pool, workspace, and app group are free control-plane objects.
-All resources are additive and contained in a single resource group (one-click cleanup).
+### Implementation Steps
 
+1. Created Azure free-trial subscription linked to the existing Entra directory.
+2. Created VNet `vnet-avd-lab` (UK West) in `rg-avd-lab`.
+3. Created host pool `hp-avd-lab` (Pooled, Desktop) via the AVD Create Host Pool wizard.
+4. Configured session hosts: Windows 11 Enterprise multi-session 24H2, Standard D2as v5, Entra ID join, no public inbound ports.
+5. Registered workspace `ws-avd-lab` and desktop application group `hp-avd-lab-DAG`.
+6. Deployment result: host pool / app group / workspace **succeeded**; session-host VM **failed** (`InvalidTemplateDeployment`, Compute preflight).
+7. Root-caused via the Quotas blade: DASv5 vCPUs limit = 0 in UK West.
 
-Impact Analysis
+### Verification / Test Evidence
 
+- Resource group `rg-avd-lab` shows host pool, application group, virtual network, workspace deployed (screenshot `avd-resources-deployed.png`).
+- VNet deployment complete (screenshot `avd-vnet-deployment.png`).
+- Quota confirmation — DASv5 vCPUs UK West = 0 of 0 (screenshot `avd-quota-blocker.png`).
+- Partial deployment view — framework succeeded, VM failed (screenshot `avd-deployment-partial.png`).
+- **Outstanding:** session-host VM not deployed; user assignment and session-login verification deferred.
 
-Systems Affected: new Azure subscription; resource group rg-avd-lab (UK West); Entra tenant df8403b0-4503-4df0-9f25-40f6c0d0a932 (identity mapping)
-Objects Created: 1 subscription, 1 VNet, 1 host pool, 1 application group, 1 workspace
-Objects Failed: 1 session-host VM (avd-sh-0) — preflight quota block
-Downtime: None
-Cost Impact: £0 currently (no compute running; control-plane objects are free)
-Dependency Impact: None downstream — AVD is a leaf; Phase 5 and the AWS phases (4.5–4.7) do not depend on it
+### Rollback Plan
 
+1. **Full teardown:** delete resource group `rg-avd-lab` (removes host pool, app group, workspace, VNet in one action).
+2. **Subscription:** cancel the free-trial subscription if no longer required.
+3. No running compute to deallocate; no data at risk.
 
-Implementation Steps
+**Rollback risk:** Very low — additive resources, single resource group, no dependencies.
 
+### Post-Implementation Review
 
-Created Azure free-trial subscription linked to the existing Entra directory.
-Created VNet vnet-avd-lab (UK West) in rg-avd-lab.
-Created host pool hp-avd-lab (Pooled, Desktop) via the AVD Create Host Pool wizard.
-Configured session hosts: Windows 11 Enterprise multi-session 24H2, Standard D2as v5, Entra ID join, no public inbound ports.
-Registered workspace ws-avd-lab and desktop application group hp-avd-lab-DAG.
-Deployment result: host pool / app group / workspace succeeded; session-host VM failed (InvalidTemplateDeployment, Compute preflight).
-Root-caused via the Quotas blade: DASv5 vCPUs limit = 0 in UK West.
+- **Outcome:** AVD framework deployed and Entra-joined — the architecture and identity mapping are in place; only the compute (session host) is outstanding.
+- **Root Cause of open item:** fresh Azure free-trial subscriptions ship with 0 vCPU quota for many VM families (here, DASv5 in UK West), blocking VM deployment at preflight. Free trials do not permit direct quota increases.
+- **Resolution path:** convert the subscription to Pay-As-You-Go (runs on remaining credit; £0 until exceeded) to lift quota caps, then add a session host to the existing host pool, assign pilot users, grant the "Virtual Machine User Login" RBAC role, and verify a cloud-desktop login.
+- **Lesson Learned:** check vCPU quota for the target VM family and region before deploying compute; a `Microsoft.Compute` `InvalidTemplateDeployment` preflight failure is commonly a quota wall, confirmable in seconds via the Quotas blade.
+- **Closure:** Approved with a tracked open item — framework implemented and verified; session-host completion deferred (non-blocking) to a Pay-As-You-Go follow-up.
 
-
-Verification / Test Evidence
-
-
-Resource group rg-avd-lab shows host pool, application group, virtual network, workspace deployed (screenshot avd-resources-deployed.png).
-VNet deployment complete (screenshot avd-vnet-deployment.png).
-Quota confirmation — DASv5 vCPUs UK West = 0 of 0 (screenshot avd-quota-blocker.png).
-Partial deployment view — framework succeeded, VM failed (screenshot avd-deployment-partial.png).
-Outstanding: session-host VM not deployed; user assignment and session-login verification deferred.
-
-
-Rollback Plan
-
-
-Full teardown: delete resource group rg-avd-lab (removes host pool, app group, workspace, VNet in one action).
-Subscription: cancel the free-trial subscription if no longer required.
-No running compute to deallocate; no data at risk.
-
-
-Rollback risk: Very low — additive resources, single resource group, no dependencies.
-
-Post-Implementation Review
-
-
-Outcome: AVD framework deployed and Entra-joined — the architecture and identity mapping are in place; only the compute (session host) is outstanding.
-Root Cause of open item: fresh Azure free-trial subscriptions ship with 0 vCPU quota for many VM families (here, DASv5 in UK West), blocking VM deployment at preflight. Free trials do not permit direct quota increases.
-Resolution path: convert the subscription to Pay-As-You-Go (runs on remaining credit; £0 until exceeded) to lift quota caps, then add a session host to the existing host pool, assign pilot users, grant the "Virtual Machine User Login" RBAC role, and verify a cloud-desktop login.
-Lesson Learned: check vCPU quota for the target VM family and region before deploying compute; a Microsoft.Compute InvalidTemplateDeployment preflight failure is commonly a quota wall, confirmable in seconds via the Quotas blade.
-Closure: Approved with a tracked open item — framework implemented and verified; session-host completion deferred (non-blocking) to a Pay-As-You-Go follow-up
 ---
