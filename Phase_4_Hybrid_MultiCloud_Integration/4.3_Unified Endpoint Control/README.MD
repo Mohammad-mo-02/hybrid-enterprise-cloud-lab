@@ -42,32 +42,6 @@ Created a **Workstations** OU and moved `WIN11-CLIENT01` into it (keeps the poli
 **Design note — targeting (principle: least scope / blast radius).** The GPO is linked to a dedicated Workstations OU rather than the domain root, so it applies only to client machines and can never pull the domain controller into MDM. The device was moved into that OU for the policy to reach it (GPOs link to OUs, not the default `Computers` container).
 
 ---
-
-## 3. Status — honest position
-
-**Configured and verified:**
-- Intune set as MDM authority; MDM user scope = All (Evidence 1).
-- Auto-enrolment GPO enabled and correctly scoped to the Workstations OU with the device inside it (Evidence 2).
-
-**Open item — device enrolment pending:** the workstation had not completed enrolment into Intune at time of writing (Intune → Devices showed 0 managed devices). This is **not a configuration gap** — both halves of the auto-enrolment mechanism are in place and correct. The trigger for a hybrid device is a **licensed pilot user signing in once** on the workstation, and that interactive sign-in was blocked by a VMware console/credential issue on the VM. Enrolment is a short close-out once a licensed sign-in succeeds.
-
-**Lesson documented:** *Device Credential* auto-enrolment was trialled first (to avoid the user sign-in) but proved unreliable for hybrid → Intune-only — it is intended for co-management (SCCM) scenarios. Reverted to *User Credential*, which is the dependable path but requires a licensed user to sign in. Recurring principle: match the enrolment credential type to the scenario; the "clever shortcut" cost time.
-
----
-
-## 4. Remaining deliverables in this phase
-
-To be completed and evidenced next (tenant-side, no device required to author):
-
-1. **Compliance policy** — require BitLocker + Secure Boot (`WIN-Compliance-Baseline`).
-2. **Configuration profile** — block USB mass storage (`WIN-USB-Block`).
-3. **Conditional Access enforcement** — move CA02 (block non-compliant devices) from report-only to enforced, demonstrating Zero Trust gating.
-4. **Device enrolment verification** — confirm `WIN11-CLIENT01` shows *Managed by: MDM* in Intune once a licensed sign-in completes, then observe compliance evaluation and CA outcome.
-
----
-
-*Environment: WIN11-CLIENT01 (Windows 11 Enterprise, hybrid joined) · DC01 (WS2022) · Entra tenant df8403b0-4503-4df0-9f25-40f6c0d0a932 · M365 E5 trial (expires 2026-08-10).*
-
 3. Endpoint controls — authored & deployed
 
 Three tenant-side controls were authored and assigned. Together they define what a "healthy" device is (compliance), harden it (configuration), and enforce the verdict (Conditional Access).
@@ -111,3 +85,10 @@ Conditional Access CA02 enforcing device compliance (Evidence 5).
 Open item — device enrolment pending: WIN11-CLIENT01 had not completed enrolment into Intune at time of writing (Intune → Devices showed 0 managed devices). This is not a configuration gap — both halves of the auto-enrolment mechanism are correct, and all endpoint controls above are live and will apply the instant a device enrols. The enrolment trigger for a hybrid device is a licensed pilot user signing in once on the workstation, and that interactive sign-in was blocked by a VMware console/credential issue. Enrolment (and the resulting live compliance/CA evaluation) is a short close-out once a licensed sign-in succeeds.
 
 Lesson documented: Device Credential auto-enrolment was trialled first (to avoid the user sign-in) but proved unreliable for hybrid → Intune-only — it targets co-management (SCCM) scenarios. Reverted to User Credential, the dependable path, which requires a licensed user to sign in. Recurring principle: match the enrolment credential type to the scenario; the "clever shortcut" cost time.
+
+
+5. What remains to fully close 4.3
+
+
+Device enrolment verification: once a licensed pilot user signs in, confirm WIN11-CLIENT01 shows Managed by: MDM in Intune, observe the compliance evaluation (expected Non-Compliant until BitLocker is enabled), then confirm CA02 blocks the non-compliant device and allows it once compliant — capturing the before/after as the final Zero Trust evidence.
+user to sign in. Recurring principle: match the enrolment credential type to the scenario; the "clever shortcut" cost time.
