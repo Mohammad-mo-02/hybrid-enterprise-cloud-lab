@@ -21,6 +21,7 @@
 | CR-2026-0625-003 | 2026-06-25 | Phase 2.6 SSH Hardening — ufw/sshd Port Mismatch Remediation | Normal (Security Hardening) + Incident (Corrective) | Medium | Implemented & Verified |
 | CR-2026-0713-006 | 2026-07-13 | Phase 4.2 — Hybrid Workstation Provisioning & Entra Hybrid Join (SCP) Configuration | Normal | Medium | Implemented & Verified |
 | CR-2026-0714-008 | 2026-07-15 | Phase 4.4 — Azure Virtual Desktop Framework Deployment (Entra-joined) | Normal | Low | Implemented — session host pending (quota) |
+| CR-2026-0718-009 | 2026-07-18 | Phase 4.5 — AWS VPC, Bastion Host & Private Windows Server (Terraform) | Normal (Cloud Build / IaC) | Low | Implemented & Verified |
 ---
 
 ## CR-2026-0619-001
@@ -543,3 +544,75 @@ Provisioned the Azure Virtual Desktop framework to deliver a cloud-hosted, Entra
 - **Closure:** Approved with a tracked open item — framework implemented and verified; session-host completion deferred (non-blocking) to a Pay-As-You-Go follow-up.
 
 ---
+## CR-2026-0718-009
+
+**Title:** Phase 4.5 — AWS VPC, Bastion Host & Private Windows Server (Terraform Multi-AZ Network)
+**Date Raised:** July 18, 2026
+**Raised By:** Mohammad (Infrastructure Engineer)
+**Change Type:** Normal (Cloud Build / Infrastructure as Code)
+**Priority:** Medium
+**Status:** Implemented & Verified
+
+### Change Summary
+
+First hands-on cloud build of the project. Provisioned a production-style AWS network entirely as version-controlled Terraform: a custom VPC (`10.20.0.0/16`) spanning two Availability Zones, with two public and two private subnets, an Internet Gateway, a single NAT Gateway (with Elastic IP), and dedicated public/private route tables. Deployed a hardened Amazon Linux 2023 bastion host (SSH from source IP only) into a public subnet and a Windows Server 2022 instance (no public IP; RDP permitted only from the bastion's security group) into a private subnet. Verified the full administrative path end-to-end — SSH to the bastion, decryption of the Windows Administrator password with the private key, SSH tunnel through the bastion, and RDP into the private server. Total: 19 resources (14 network + 5 compute). Prerequisite Phase 1.5 (AWS account, root MFA, least-privilege IAM user, Terraform/AWS CLI setup) was completed as part of this change.
+
+### Risk Level
+
+**Overall: LOW**
+
+- Isolated personal AWS account (819004394298); Free-Tier instances; no production data or dependencies
+- Only cost-bearing component (NAT Gateway) mitigated by immediate teardown after verification
+- No inbound exposure beyond SSH (port 22) restricted to a single source IP (/32)
+
+**Mitigating Factors:**
+
+- All infrastructure defined as declarative, idempotent Terraform — reviewed via `terraform plan` before every `apply`
+- Root account secured with MFA and no access keys; all work performed as a least-privilege IAM user
+- Clean, complete rollback available at any point via `terraform destroy`
+
+### Impact Analysis
+
+- **Systems Affected:** AWS account 819004394298, region eu-west-2 (London). New VPC `vpc-hybrid-lab`.
+- **Objects Created:** 19 resources — 1 VPC, 4 subnets, 1 Internet Gateway, 1 Elastic IP, 1 NAT Gateway, 2 route tables, 4 route-table associations, 1 key pair, 2 security groups, 2 EC2 instances.
+- **Downtime:** None (new, self-contained environment; no effect on the default VPC or existing resources).
+- **User Impact:** None (single-operator lab).
+- **Dependency Impact:** Positive — establishes the network foundation required by Phase 4.6 (Security Groups, NACLs, IAM roles) and Phase 4.7 (S3 + KMS + lifecycle rules).
+
+### Implementation Steps
+
+1. **Phase 1.5 foundations:** created AWS account; enabled MFA on root and created no root access keys; created least-privilege IAM user `arsalan-admin` (in `Admins` group) with its own MFA and a CLI access key; installed Terraform + AWS CLI; configured named profile `arsalan-lab`; verified identity with `aws sts get-caller-identity`.
+2. Authored the network Terraform (VPC, subnets, IGW, EIP, NAT, route tables, associations).
+3. `terraform init` → `terraform plan` (reviewed `14 to add`) → `terraform apply` (14 resources created).
+4. Verified the private route table routes `0.0.0.0/0 → NAT` with no route to the Internet Gateway.
+5. `terraform destroy` at end of Day 1 to avoid overnight NAT charges.
+6. Day 2: `terraform apply` rebuilt the identical network in ~90 seconds (idempotency confirmed).
+7. Generated an SSH key pair; restricted the bastion security group to the operator's public IP (/32).
+8. Authored the compute Terraform (key pair, two security groups, bastion, Windows server); `terraform apply` (5 resources created).
+9. SSH'd into the bastion; retrieved and decrypted the Windows Administrator password with the private key (`aws ec2 get-password-data --priv-launch-key`); opened an SSH tunnel (`ssh -L 13389:<windows-private-ip>:3389`); RDP'd into the private Windows server via `localhost:13389`.
+10. `terraform destroy` to remove all 19 resources and stop billing.
+
+### Verification / Test Evidence
+
+- `terraform plan` reviewed before each apply (`Plan: 14 to add`, then `5 to add`).
+- `Apply complete! Resources: 14 added` (network) and `5 added` (compute), captured in `03-terraform-apply-network.png` and `05-terraform-apply-compute.png`.
+- Private route table confirmed `0.0.0.0/0 → nat-…`, `10.20.0.0/16 → local`, no IGW route — `04-route-table-private-nat.png`.
+- Compute outputs confirm the Windows instance holds a private IP only (`windows_private_ip = 10.20.11.137`) with no public address.
+- Successful SSH-to-bastion (`06-ssh-into-bastion.png`) and RDP-to-private-Windows-via-tunnel (`07-rdp-windows-desktop.png`).
+- Full evidence set and architecture diagram committed to the Phase 4.5 README.
+
+### Rollback Plan
+
+1. `terraform destroy` removes all 19 resources cleanly and idempotently, returning the account to its prior state (default VPC only). State is tracked in `terraform.tfstate`.
+2. Rollback executed as planned at the end of the phase; environment can be rebuilt identically at any time via `terraform apply`.
+3. No data-loss risk — the lab holds no persistent data; the entire environment is reproducible from code.
+
+### Post-Implementation Review
+
+- **Issues encountered:**
+  1. `aws ec2 get-password-data` failed to decrypt the Windows password because modern `ssh-keygen` writes private keys in OpenSSH format, whereas AWS decryption requires PEM/RSA. Resolved with `ssh-keygen -p -m PEM -f <key>`.
+  2. `terraform apply` rejected the security-group `name` values because AWS reserves the `sg-` prefix for security-group IDs. Renamed to `bastion-sg` / `windows-sg`.
+  3. Initial RDP failures traced to a mistyped tunnel port and a closed SSH-forwarding session (the `ssh -L` session *is* the tunnel and must remain open).
+- **Lessons Learned:** generate EC2 key pairs in PEM format up front when Windows password retrieval is required; avoid AWS reserved naming prefixes; the SSH port-forwarding session must stay active for the tunnel to function.
+- **Preventive Action:** phase-completion checklist updated to note the PEM key requirement and the reserved-prefix constraint for future EC2/Windows and security-group work.
+- **Closure:** Approved — network foundation established and verified end-to-end; unblocks Phase 4.6 (Security Groups, NACLs, IAM roles) and Phase 4.7 (S3 + KMS).
