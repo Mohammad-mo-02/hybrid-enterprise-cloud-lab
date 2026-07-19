@@ -191,3 +191,90 @@ gives the machine an identity so it can call other AWS services *without any sto
 - **Instance profile** — the wrapper that attaches an IAM role to an EC2 instance.
 - **SSM Session Manager** — AWS service for a keyless, portless shell onto an instance.
 - **Terraform** — declarative IaC tool that builds your written blueprint in AWS.
+
+---
+
+## Day 1 — The Network Firewall Layer (Security Groups + Network ACLs)
+
+**Goal of the day:** take the network from 4.5 and add two things — **least-privilege egress** on the
+security groups, and a **second, subnet-level firewall (NACLs)** underneath them — then *prove* the
+hardening works without breaking legitimate access.
+
+### What actually changed
+
+**1. Security groups — egress tightened (the refinement).**
+In 4.5 both machines had "allow all outbound." We replaced that with least-privilege egress:
+
+| Machine | Egress now allows | Why |
+|---|---|---|
+| Bastion | `443`, `80` to anywhere; `53` (DNS) to the VPC; `3389` to the VPC | Updates/AWS APIs; name resolution; reach the Windows box for the tunnel |
+| Windows | `443`, `80` to anywhere; `53` (DNS) to the VPC | Windows Update / AWS APIs; name resolution |
+
+*Ingress was left unchanged (SSH from my IP; RDP from the bastion). And because security groups are
+**stateful**, no return rules are written — replies are allowed automatically.*
+
+**2. Network ACLs — a new stateless layer.**
+Two custom NACLs, one on the public subnets, one on the private. Because NACLs are **stateless**, each
+includes an explicit **ephemeral-ports (1024–65535)** rule so return traffic can get back in. The
+automatic final **deny-all** rule blocks any new inbound connection from the internet.
+
+### Step 1 — Apply the hardening
+
+![terraform apply showing 2 added, 2 changed, 0 destroyed](01-apply-sg-nacl.png)
+
+*`Apply complete! Resources: 2 added, 2 changed, 0 destroyed`* — the 2 NACLs added, the 2 security
+groups' egress edited **in place**, and **0 destroys**.
+
+> **Lesson banked here:** the first `plan` actually showed `2 to destroy`, because I'd changed the
+> security-group **description** — an **immutable** attribute in AWS, so any change forces a full
+> destroy-and-recreate. Reverting the description to its original value made it a clean in-place edit.
+> *Always read a plan for unexpected `destroy` lines before applying — that's exactly why `plan`
+> exists.*
+
+### Step 2 — Prove the least-privilege egress actually restricts traffic
+
+![bastion terminal: curl to aws.amazon.com returns HTTP/2 200, ping to 8.8.8.8 shows 100% packet loss](02-egress-least-privilege-test.png)
+
+Run from inside the bastion:
+- `curl -I https://aws.amazon.com` → **`HTTP/2 200`** — needed DNS (53) to resolve the name and HTTPS
+  (443) to connect, both explicitly allowed. ✅
+- `ping -c 3 8.8.8.8` → **`100% packet loss`** — ICMP was never permitted, so it's dropped. ❌
+
+Same machine, same internet — one protocol allowed, one denied, purely because of the rules. **That
+is least-privilege egress:** the machine can only reach out on exactly the ports permitted.
+
+### Step 3 — Verify the second (NACL) layer and its stateless rules
+
+![nacl-private inbound rules: rule 100 allow all from 10.20.0.0/16, rule 110 allow TCP 1024-65535, rule star deny all](03-nacl-private-inbound-rules.png)
+
+The private subnets' NACL inbound rules, and why each exists:
+- **`100` Allow all from `10.20.0.0/16`** — anything from inside the VPC (lets the bastion's RDP and
+  DNS replies in).
+- **`110` Allow TCP `1024–65535` from anywhere** — the **ephemeral-ports** rule. It exists *only*
+  because a NACL is stateless; it's what lets the Windows server's update **replies** back in. Delete
+  it and updates hang, even though the outbound 443 rule is fine.
+- **`*` Deny all** — the automatic final rule. With no allow rule for a *new* inbound connection from
+  the internet, any such attempt is dropped here. This is the subnet-level guard, a second layer
+  beneath the security group.
+
+*Details also confirm `Default: No` (a custom NACL) and `Associated with 2 Subnets` (attached to both
+private subnets).*
+
+### Step 4 — Confirm we hardened without locking ourselves out
+
+![SSH session landing at the ec2-user@ip-10-20-1-12 bastion prompt after the hardening](04-ssh-bastion-access-ok.png)
+
+SSH still lands at the bastion prompt. For this to work the packet had to clear **both** new layers —
+the public **NACL** (SSH in from my IP + ephemeral returns out) *and* the tightened bastion **security
+group**. Access intact, security improved.
+
+### Day 1 result
+
+Layered defence in depth is now live: **no route in (4.5 isolation) → subnet guard (NACL) → machine
+lock (security group)**, with egress restricted to least privilege. Verified working end-to-end, then
+`terraform destroy` to stop the NAT billing overnight (the code rebuilds it identically on demand).
+
+**Interview one-liners from today:**
+- *"I proved the egress lockdown by showing HTTPS succeeded while ICMP was dropped."*
+- *"A NACL is stateless, so I had to add an explicit ephemeral-ports rule for return traffic — a security group handles that automatically."*
+- *"Changing a security group's description forces a replace because it's immutable — I caught it in the plan before applying."*
