@@ -22,6 +22,7 @@
 | CR-2026-0713-006 | 2026-07-13 | Phase 4.2 — Hybrid Workstation Provisioning & Entra Hybrid Join (SCP) Configuration | Normal | Medium | Implemented & Verified |
 | CR-2026-0714-008 | 2026-07-15 | Phase 4.4 — Azure Virtual Desktop Framework Deployment (Entra-joined) | Normal | Low | Implemented — session host pending (quota) |
 | CR-2026-0718-009 | 2026-07-18 | Phase 4.5 — AWS VPC, Bastion Host & Private Windows Server (Terraform) | Normal (Cloud Build / IaC) | Low | Implemented & Verified |
+| CR-2026-0720-010 | 2026-07-20 | Phase 4.6 — Security Hardening: Least-Privilege Egress, Network ACLs & IAM Instance Role | Normal (Security Hardening) | Low | Implemented & Verified |
 ---
 
 ## CR-2026-0619-001
@@ -616,3 +617,104 @@ First hands-on cloud build of the project. Provisioned a production-style AWS ne
 - **Lessons Learned:** generate EC2 key pairs in PEM format up front when Windows password retrieval is required; avoid AWS reserved naming prefixes; the SSH port-forwarding session must stay active for the tunnel to function.
 - **Preventive Action:** phase-completion checklist updated to note the PEM key requirement and the reserved-prefix constraint for future EC2/Windows and security-group work.
 - **Closure:** Approved — network foundation established and verified end-to-end; unblocks Phase 4.6 (Security Groups, NACLs, IAM roles) and Phase 4.7 (S3 + KMS).
+
+---
+
+## CR-2026-0720-010
+
+**Title:** Phase 4.6 — Security Hardening: Least-Privilege Egress, Network ACLs & IAM Instance Role
+**Date Raised:** July 20, 2026
+**Raised By:** Mohammad (Infrastructure Engineer)
+**Change Type:** Normal (Security Hardening)
+**Priority:** Medium
+**Status:** Implemented & Verified
+
+### Change Summary
+
+Hardened the Phase 4.5 network with three additional security layers, all as Terraform:
+1. **Least-privilege egress** on both security groups — replaced "allow all outbound" with only the
+   required ports (443/80 to the internet, 53/DNS to the VPC resolver, and 3389 to the VPC on the
+   bastion for the RDP tunnel). Ingress unchanged.
+2. **Network ACLs** — added two custom, stateless, subnet-level firewalls (public and private) as a
+   second layer beneath the security groups (defence in depth), including explicit ephemeral-port
+   (1024-65535) rules for return traffic and an automatic deny-all for new inbound from the internet.
+3. **IAM instance role** — created an EC2 IAM role (`ec2-instance-role`) with a trust policy for the
+   EC2 service and the AWS-managed `AmazonS3ReadOnlyAccess` and `AmazonSSMManagedInstanceCore`
+   policies, attached to both instances via an instance profile. This provides temporary,
+   auto-rotating credentials (no stored keys) and enables keyless, portless administration via SSM
+   Session Manager.
+
+### Risk Level
+
+**Overall: LOW**
+
+- Isolated lab account; Free-Tier instances; no production data or dependencies.
+- Egress tightening and NACLs could break connectivity if misconfigured; mitigated by verifying each
+  access path after applying.
+- IAM role follows least privilege (read-only S3 + SSM core only).
+
+**Mitigating Factors:**
+
+- All changes reviewed via `terraform plan` before `apply`; egress kept functional (DNS explicitly
+  allowed).
+- Security-group descriptions left unchanged to avoid an immutable-attribute forced replacement.
+- Full rollback available via `terraform destroy`.
+
+### Impact Analysis
+
+- **Systems Affected:** VPC `vpc-hybrid-lab`, both EC2 instances (bastion, windows-server), region
+  eu-west-2.
+- **Objects Created/Modified:** 2 security groups' egress edited in place; 2 Network ACLs created and
+  associated with the public/private subnets; 1 IAM role, 2 role-policy attachments, 1 instance profile
+  created; 2 instances updated in place to attach the profile.
+- **Downtime:** None (in-place changes; no instance replacement).
+- **User Impact:** None (single-operator lab).
+- **Dependency Impact:** Positive — the IAM role and SSM access set up Phase 4.7 (S3 + KMS), and the
+  hardened posture is the security baseline for later phases.
+
+### Implementation Steps
+
+1. Rebuilt the Phase 4.5 stack via `terraform apply` (21 resources).
+2. Replaced `security-groups.tf` with least-privilege egress (443/80 internet, 53 DNS to VPC, 3389 to
+   VPC on bastion); added `nacls.tf` with two custom NACLs. `terraform apply` (2 added, 2 changed).
+3. Verified egress from the bastion: `curl https://aws.amazon.com` returned HTTP/2 200 (allowed) while
+   `ping 8.8.8.8` showed 100% packet loss (ICMP denied). Confirmed `nacl-private` inbound rules
+   (allow-from-VPC, ephemeral 1024-65535, deny-all) and its association with both private subnets.
+   `terraform destroy` at end of Day 1.
+4. Rebuilt the stack; added `iam.tf` (role, trust policy, two managed-policy attachments, instance
+   profile) and attached the profile to both instances. `terraform apply` (4 added, 2 changed).
+5. Confirmed both instances registered with Systems Manager (Online), opened an SSM Session Manager
+   PowerShell session on the private Windows server (no key, no bastion, no inbound port), and
+   verified the role via the instance metadata service (`ec2-instance-role`).
+6. `terraform destroy` to close the phase.
+
+### Verification / Test Evidence
+
+- Egress least privilege: `curl` (HTTPS) succeeded, `ping` (ICMP) dropped — `02-egress-least-privilege-test.png`.
+- NACL second layer: `nacl-private` inbound rules incl. ephemeral 1024-65535 and deny-all —
+  `03-nacl-private-inbound-rules.png`.
+- Access intact after hardening: SSH to bastion — `04-ssh-bastion-access-ok.png`.
+- IAM role registered instances with SSM (both Online) — `05-ssm-instances-online.png`.
+- Keyless/portless connect + attached IAM role — `06-ssm-connect-windows.png`.
+- SSM session on the private server — `07-ssm-windows-session.png`.
+- Temporary role credentials via metadata (`ec2-instance-role`) — `08-role-via-metadata.png`.
+
+### Rollback Plan
+
+`terraform destroy` removes all Phase 4.6 additions along with the base stack, returning the account to
+its prior state. Individual layers can also be reverted by removing `nacls.tf` / `iam.tf` or restoring
+the previous `security-groups.tf` and re-applying. State tracked in `terraform.tfstate`. Rollback
+executed as planned at end of phase.
+
+### Post-Implementation Review
+
+- **Issue encountered:** the first `plan` showed `2 to destroy` because the security-group
+  **description** (an immutable attribute) had been changed, forcing a replace. Resolved by keeping the
+  original descriptions so the egress change applied in place.
+- **Lessons Learned:** (1) some attributes are immutable and force replacement — always read the plan
+  for unexpected destroys; (2) NACLs are stateless, so return traffic needs explicit ephemeral-port
+  rules; (3) least-privilege egress must still allow DNS (53) or name resolution fails; (4) an IAM role
+  attached to a running instance takes a few minutes for the SSM agent to register.
+- **Preventive Action:** phase checklist updated with the immutable-attribute and stateless-NACL notes.
+- **Closure:** Approved — defence-in-depth security layer complete and verified; unblocks Phase 4.7
+  (S3 + KMS), which will use the IAM role.
