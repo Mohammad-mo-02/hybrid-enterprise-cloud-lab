@@ -278,3 +278,74 @@ lock (security group)**, with egress restricted to least privilege. Verified wor
 - *"I proved the egress lockdown by showing HTTPS succeeded while ICMP was dropped."*
 - *"A NACL is stateless, so I had to add an explicit ephemeral-ports rule for return traffic — a security group handles that automatically."*
 - *"Changing a security group's description forces a replace because it's immutable — I caught it in the plan before applying."*
+
+---
+
+## Day 2 — The Identity Layer (IAM Role, Instance Profile & SSM)
+
+**Goal of the day:** give the machines an **identity** so they can use AWS services with **temporary
+credentials instead of stored keys**, and can be administered **keylessly** — no SSH key, no bastion,
+no open inbound port.
+
+### What we built
+
+A single IAM role, in four parts (`iam.tf`), attached to both instances via an instance profile:
+
+| Piece | What it is |
+|---|---|
+| **Trust policy** | Says *who* may assume the role — the EC2 service. (This is what makes it a *role*, not a user.) |
+| **The role** (`ec2-instance-role`) | The identity itself. |
+| **Two permission policies** | AWS-managed `AmazonS3ReadOnlyAccess` (read S3) + `AmazonSSMManagedInstanceCore` (enables Session Manager). |
+| **Instance profile** | The wrapper that lets an EC2 instance actually wear the role. |
+
+**Why a role and not keys:** the instance is handed **short-lived, auto-rotating** credentials through
+its internal metadata service — nothing secret is ever written to disk, so there is no key to leak.
+This is the single most important cloud-security best practice.
+
+### Step 1 — Apply
+
+`terraform apply` → **`4 added, 2 changed, 0 destroyed`**: the role, its two policy attachments and the
+instance profile were added, and each instance was updated **in place** to wear the profile.
+
+### Step 2 — The instances register themselves with Systems Manager
+
+![Session Manager target list showing windows-server and bastion-host both Online and running](05-ssm-instances-online.png)
+
+Once the role was attached, each instance's SSM agent used the role's credentials to **register itself**
+as a managed node. Both show **Online / running** — including the **private** Windows server, which has
+no public IP. It appeared here purely because of the role.
+
+### Step 3 — Connect with no keys, no bastion, no open ports
+
+![EC2 Connect page: SSM Session Manager selected, IAM role ec2-instance-role attached, Ping status Online](06-ssm-connect-windows.png)
+
+The connect screen states the model exactly: **"Uses IAM-based authentication. Connect without SSH
+keys, bastion hosts, or opening any inbound ports."** Bottom-right confirms the attached **IAM role
+`ec2-instance-role`** and **Ping status: Online** — the role is doing the work.
+
+### Step 4 — A shell on the private server
+
+![Browser-based PowerShell session running on the private Windows server via SSM](07-ssm-windows-session.png)
+
+A full PowerShell session **inside the private Windows Server** — reached over nothing but the
+instance's *outbound* 443 connection to AWS. This is the modern, bastion-free admin model.
+
+### Step 5 — Prove it's using temporary role credentials (no stored keys)
+
+![PowerShell querying the instance metadata service, which returns ec2-instance-role](08-role-via-metadata.png)
+
+Querying the instance metadata service returns **`ec2-instance-role`**. The machine has a working AWS
+identity, yet no credentials were ever placed on it — AWS delivers the role's **temporary,
+auto-rotating** credentials automatically (a full fetch would show a session `Token` and an
+`Expiration`). **No access keys, nothing to leak.**
+
+### Day 2 result
+
+The instances now have a least-privilege identity (S3 read-only + SSM) using temporary credentials, and
+the private server can be administered keylessly and portlessly via SSM. Combined with Day 1, Phase 4.6
+delivers a full defence-in-depth security posture. Verified end-to-end, then `terraform destroy`.
+
+**Interview one-liners from today:**
+- *"An IAM role is safer than keys on a server because the credentials are temporary, auto-rotate, and never touch disk — there's nothing to steal."*
+- *"With SSM Session Manager I administered a private instance with no SSH key, no bastion and no open inbound port — it connects outbound to AWS."*
+- *"A role is defined by a trust policy (who can assume it) plus permission policies (what it can do), attached to EC2 through an instance profile."*
