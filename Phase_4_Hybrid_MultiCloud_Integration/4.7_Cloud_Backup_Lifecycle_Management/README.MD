@@ -139,6 +139,7 @@ A complete design protects **both**.
 - **Lifecycle rule** — automatic transition/expiration of objects to manage cost (Day 2).
 
 ---
+---
 
 ## Day 1 — The Secure Bucket (S3 + Customer-Managed KMS)
 
@@ -162,10 +163,9 @@ key must both permit access — two independent locks.
 
 ### Step 1 — Apply
 
-![terraform apply showing 32 added with s3_bucket_name and kms_key_arn outputs](01-terraform-apply-s3-kms.png)
-
-`Apply complete!` with outputs `s3_bucket_name = hybrid-lab-secure-819004394298` and the customer-managed
-`kms_key_arn`. The whole stack plus the seven new storage resources, from code.
+`terraform apply` created the whole stack plus the seven new storage resources, ending in
+`Apply complete!` with outputs `s3_bucket_name = hybrid-lab-secure-819004394298` and the
+customer-managed `kms_key_arn` — the bucket and our own key, built entirely from code.
 
 ### Step 2 — Encryption at rest, with our own key
 
