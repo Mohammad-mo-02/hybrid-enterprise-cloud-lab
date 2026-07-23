@@ -137,3 +137,67 @@ A complete design protects **both**.
 - **Bucket policy** — resource-based access policy attached to a bucket.
 - **Versioning** — retaining previous versions of objects.
 - **Lifecycle rule** — automatic transition/expiration of objects to manage cost (Day 2).
+
+---
+
+## Day 1 — The Secure Bucket (S3 + Customer-Managed KMS)
+
+**Goal of the day:** create an S3 bucket that is private by default, **encrypted at rest with a KMS
+key we own and control**, and versioned — then verify each control in the console.
+
+### What we built
+
+| File | Resource | What it does |
+|---|---|---|
+| `kms.tf` | `aws_kms_key` + alias | A **customer-managed key** with a key policy and **automatic yearly rotation**. Its policy also grants the 4.6 EC2 role `kms:Decrypt`, so the instance can later read encrypted objects. |
+| `s3.tf` | `aws_s3_bucket` | The bucket, named `hybrid-lab-secure-<account-id>` (globally unique). |
+| `s3.tf` | `aws_s3_bucket_public_access_block` | **Block Public Access** — all four switches on. |
+| `s3.tf` | `aws_s3_bucket_versioning` | Versioning enabled. |
+| `s3.tf` | `aws_s3_bucket_server_side_encryption_configuration` | Default **SSE-KMS** encryption using our key (Bucket Key on for cost). |
+| `s3.tf` | `aws_s3_bucket_policy` | Denies any request **not over HTTPS** (encryption in transit). |
+
+**Why the KMS key grants the EC2 role Decrypt:** `AmazonS3ReadOnlyAccess` lets the instance *read*
+objects, but a KMS-encrypted object *also* needs `kms:Decrypt` on the key. So the bucket **and** the
+key must both permit access — two independent locks.
+
+### Step 1 — Apply
+
+![terraform apply showing 32 added with s3_bucket_name and kms_key_arn outputs](01-terraform-apply-s3-kms.png)
+
+`Apply complete!` with outputs `s3_bucket_name = hybrid-lab-secure-819004394298` and the customer-managed
+`kms_key_arn`. The whole stack plus the seven new storage resources, from code.
+
+### Step 2 — Encryption at rest, with our own key
+
+![S3 bucket default encryption: SSE-KMS with the customer-managed key ARN, Bucket Key enabled](02-bucket-encryption.png)
+
+Default encryption is **SSE-KMS**, and the **Encryption key ARN matches our `kms_key_arn`** — so it's
+*our* key encrypting the data, not AWS's default. Every new object is auto-encrypted (envelope
+encryption). **Bucket Key: Enabled** trims KMS request costs.
+
+### Step 3 — Versioning
+
+![S3 bucket versioning showing Enabled](03-bucket-versioning.png)
+
+**Bucket Versioning: Enabled** — old versions are retained, so an accidental overwrite or delete is
+recoverable. It's also the foundation for Day 2's lifecycle rules.
+
+### Step 4 — Block Public Access
+
+![S3 Block public access showing Block all public access On with all four settings enabled](04-block-public-access.png)
+
+**Block *all* public access: On**, with all four individual settings enabled. The bucket cannot be made
+public — even by a careless future policy or ACL. This is the control that prevents the classic "public
+S3 bucket" data breach.
+
+### Day 1 result
+
+A private-by-default, versioned bucket, encrypted at rest with a **customer-managed KMS key** (rotation
+on) and enforcing HTTPS in transit. Verified in the console, then `terraform destroy` (the KMS key
+enters a 7-day deletion window — an AWS safety feature — rather than deleting instantly).
+
+**Interview one-liners from today:**
+- *"Block Public Access is the safety net that stops the classic public-bucket breach — it overrides any careless policy."*
+- *"I used SSE-KMS with a customer-managed key so I control the key policy and rotation, not just 'encryption on'."*
+- *"Reading a KMS-encrypted object needs both S3 read permission and kms:Decrypt — the bucket and the key are two separate locks."*
+- *"KMS uses envelope encryption: a data key encrypts the object, and the master key encrypts the data key."*
