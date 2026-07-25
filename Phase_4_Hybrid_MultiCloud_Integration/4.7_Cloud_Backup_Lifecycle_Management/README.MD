@@ -201,3 +201,50 @@ enters a 7-day deletion window — an AWS safety feature — rather than deletin
 - *"I used SSE-KMS with a customer-managed key so I control the key policy and rotation, not just 'encryption on'."*
 - *"Reading a KMS-encrypted object needs both S3 read permission and kms:Decrypt — the bucket and the key are two separate locks."*
 - *"KMS uses envelope encryption: a data key encrypts the object, and the master key encrypts the data key."*
+
+---
+
+## Day 2 — Lifecycle Rules + End-to-End Verification
+
+**Goal of the day:** add automatic **lifecycle cost management** to the bucket, and prove the whole
+chain works — the **private instance reads an encrypted object from S3 using only its IAM role**, no
+keys anywhere.
+
+### What we added
+
+- `lifecycle.tf` — an `aws_s3_bucket_lifecycle_configuration` rule (`archive-and-clean`): current
+  objects tier to **Standard-IA at 30 days** then **Glacier at 90**; **old (noncurrent) versions**
+  move to Glacier at 30 days and are **deleted at 90**; failed multipart uploads are aborted after 7.
+- `force_destroy = true` added to the bucket so `terraform destroy` can remove it even after a test
+  object is uploaded.
+
+### Step 1 — The lifecycle rule (automatic cost tiering)
+
+![S3 lifecycle rule archive-and-clean, Enabled, entire bucket, with Day 0/30/90 transitions for current and noncurrent versions](06-lifecycle-rule.png)
+
+The rule matches the code exactly: current versions Day 0 → **Standard-IA (30)** → **Glacier (90)**;
+noncurrent versions → Glacier (30) → **deleted (90)**. Because versioning is on, old versions are
+managed separately from the live object. This is cost control with zero manual work.
+
+### Step 2 — The private instance reads the encrypted object using only its role
+
+![SSM session on the bastion: get-caller-identity shows the assumed ec2-instance-role, s3 ls lists test47.txt, and s3 cp prints the decrypted file contents](05-instance-reads-s3.png)
+
+From an SSM session on the instance (no key, no bastion port), three commands prove the full chain:
+- `aws sts get-caller-identity` → **`assumed-role/ec2-instance-role/...`** — the instance is acting as
+  the IAM role, with **no credentials configured**.
+- `aws s3 ls s3://hybrid-lab-secure-.../` → lists `test47.txt` — the role's **S3 read** works.
+- `aws s3 cp s3://.../test47.txt -` → prints **"hello from phase 4.7 - encrypted at rest with my own
+  KMS key"**. Reading this required **both** S3 read (bucket) **and** `kms:Decrypt` (key) — two
+  independent locks, both opened by the role, with **zero keys on the machine**.
+
+### Day 2 result
+
+The bucket now has automatic lifecycle cost management, and the end-to-end security design is proven:
+**4.5** (private network) → **4.6** (IAM role + firewalls) → **4.7** (encrypted, private bucket) work
+as one system. Verified, then `terraform destroy`.
+
+**Interview one-liners from today:**
+- *"Lifecycle rules tier objects down to Standard-IA then Glacier automatically, and expire old versions — cost control as code."*
+- *"The instance read an encrypted object with no keys: its IAM role provided temporary credentials, and that role had both S3 read and kms:Decrypt — the bucket and the key both had to say yes."*
+- *"Encryption and access control are separate layers — reaching the bucket isn't enough; you also need permission on the KMS key."*
