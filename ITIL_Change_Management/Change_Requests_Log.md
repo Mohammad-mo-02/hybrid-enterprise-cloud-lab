@@ -23,6 +23,7 @@
 | CR-2026-0714-008 | 2026-07-15 | Phase 4.4 — Azure Virtual Desktop Framework Deployment (Entra-joined) | Normal | Low | Implemented — session host pending (quota) |
 | CR-2026-0718-009 | 2026-07-18 | Phase 4.5 — AWS VPC, Bastion Host & Private Windows Server (Terraform) | Normal (Cloud Build / IaC) | Low | Implemented & Verified |
 | CR-2026-0720-010 | 2026-07-20 | Phase 4.6 — Security Hardening: Least-Privilege Egress, Network ACLs & IAM Instance Role | Normal (Security Hardening) | Low | Implemented & Verified |
+| CR-2026-0725-011 | 2026-07-25 | Phase 4.7 — Secure S3 Storage: KMS Encryption, Block Public Access & Lifecycle | Normal (Security Hardening) | Low | Implemented & Verified |
 ---
 
 ## CR-2026-0619-001
@@ -718,3 +719,96 @@ executed as planned at end of phase.
 - **Preventive Action:** phase checklist updated with the immutable-attribute and stateless-NACL notes.
 - **Closure:** Approved — defence-in-depth security layer complete and verified; unblocks Phase 4.7
   (S3 + KMS), which will use the IAM role.
+
+---
+
+## CR-2026-0725-011
+
+**Title:** Phase 4.7 — Secure S3 Storage: KMS Encryption, Block Public Access & Lifecycle Management
+**Date Raised:** July 25, 2026
+**Raised By:** Mohammad (Infrastructure Engineer)
+**Change Type:** Normal (Security Hardening / Data Protection)
+**Priority:** Medium
+**Status:** Implemented & Verified
+
+### Change Summary
+
+Added a secure S3 storage layer to the lab, all as Terraform:
+1. A **customer-managed KMS key** (`aws_kms_key`) with its own key policy and automatic yearly
+   rotation. The key policy grants the account root full control and grants the Phase 4.6 EC2 instance
+   role `kms:Decrypt` / `kms:GenerateDataKey`, so the instance can read encrypted objects.
+2. A **secure S3 bucket** (`hybrid-lab-secure-<account-id>`) with **Block Public Access** (all four
+   settings on), **versioning** enabled, **default SSE-KMS encryption** using the customer-managed key
+   (Bucket Key enabled), and a **bucket policy** denying any non-HTTPS request (encryption in transit).
+3. A **lifecycle configuration** that transitions current objects to Standard-IA at 30 days and Glacier
+   at 90, moves noncurrent versions to Glacier at 30 days and deletes them at 90, and aborts incomplete
+   multipart uploads after 7 days.
+
+### Risk Level
+
+**Overall: LOW**
+
+- Isolated lab account; no production data.
+- Bucket is private by default (Block Public Access on) and encrypted at rest and in transit.
+- `force_destroy = true` allows teardown of a non-empty bucket (lab convenience; would be omitted in
+  production to prevent accidental data loss).
+
+**Mitigating Factors:**
+
+- All changes reviewed via `terraform plan` before `apply`.
+- Encryption enforced via bucket default encryption (robust) rather than a deny-put policy that can
+  reject default-encrypted uploads.
+- Full rollback via `terraform destroy` (KMS key enters a 7-day deletion window).
+
+### Impact Analysis
+
+- **Systems Affected:** New S3 bucket and KMS key in region eu-west-2; the Phase 4.6 EC2 role gains
+  decrypt access to the key.
+- **Objects Created:** 1 KMS key + alias; 1 S3 bucket with public-access block, versioning, default
+  encryption, bucket policy, and lifecycle configuration.
+- **Downtime:** None (additive).
+- **User Impact:** None (single-operator lab).
+- **Dependency Impact:** Consumes the Phase 4.6 IAM role (S3 read + KMS decrypt). Provides a secure
+  storage pattern reusable by later phases.
+
+### Implementation Steps
+
+1. **Day 1:** wrote `kms.tf` (customer-managed key, key policy, rotation, alias) and `s3.tf` (bucket,
+   Block Public Access, versioning, SSE-KMS default encryption, HTTPS-only bucket policy).
+   `terraform apply`; verified in the console: SSE-KMS with the customer-managed key ARN, versioning
+   enabled, Block all public access on. `terraform destroy` to close Day 1.
+2. **Day 2:** added `lifecycle.tf` (transition/expiration rules) and `force_destroy` on the bucket.
+   `terraform apply`. Uploaded a test object over HTTPS (auto-encrypted with the KMS key). From an SSM
+   session on the instance, ran `aws sts get-caller-identity` (assumed `ec2-instance-role`),
+   `aws s3 ls` (listed the object), and `aws s3 cp` (printed the decrypted contents) — proving the role
+   can read from S3 and decrypt with KMS using temporary credentials only. `terraform destroy`.
+
+### Verification / Test Evidence
+
+- Default encryption SSE-KMS with the customer-managed key — `02-bucket-encryption.png`.
+- Bucket versioning enabled — `03-bucket-versioning.png`.
+- Block all public access on (all four settings) — `04-block-public-access.png`.
+- Instance reads and decrypts the object via its role (assumed-role, s3 ls, s3 cp output) —
+  `05-instance-reads-s3.png`.
+- Lifecycle rule `archive-and-clean` with the correct transitions/expirations — `06-lifecycle-rule.png`.
+
+### Rollback Plan
+
+`terraform destroy` removes the bucket (force_destroy empties it first), the lifecycle configuration,
+and schedules the KMS key for deletion (7-day window). State tracked in `terraform.tfstate`. Rollback
+executed as planned at end of phase.
+
+### Post-Implementation Review
+
+- **Design decision:** enforced encryption at rest via **bucket default encryption** rather than a
+  "deny unencrypted PutObject" bucket-policy statement, because the deny-put approach can reject
+  requests that default encryption would have encrypted anyway. TLS (in-transit) is enforced via the
+  bucket policy.
+- **Lessons Learned:** (1) reading an SSE-KMS object needs `kms:Decrypt` in addition to S3 read — the
+  bucket and the key are separate locks; (2) a KMS key is not deleted instantly on destroy — it enters
+  a mandatory waiting period; (3) `force_destroy` is required to `terraform destroy` a non-empty
+  bucket.
+- **Preventive Action:** documented the KMS-decrypt requirement and force_destroy note in the phase
+  checklist.
+- **Closure:** Approved — secure, encrypted, lifecycle-managed storage complete and verified
+  end-to-end with the Phase 4.6 instance role.
